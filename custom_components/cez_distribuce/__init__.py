@@ -1,0 +1,209 @@
+import datetime as dt
+import logging
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+import voluptuous as vol
+from homeassistant.const import CONF_SCAN_INTERVAL
+from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
+from .const import (
+    DOMAIN,
+    CONF_USERNAME,
+    CONF_PASSWORD,
+    DEFAULT_SCAN_INTERVAL_OUTAGES_MIN,
+    DEFAULT_SCAN_INTERVAL_READINGS_MIN,
+    DEFAULT_SCAN_INTERVAL_SIGNALS_MIN,
+)
+from .rest_client.rest_client import CezDistribuceRestClient
+
+_LOGGER = logging.getLogger(__name__)
+
+PLATFORMS = ["binary_sensor", "calendar", "sensor"]
+
+DOMAIN_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_USERNAME): cv.string,
+        vol.Required(CONF_PASSWORD): cv.string,
+        vol.Optional("scan_interval_signals", default=DEFAULT_SCAN_INTERVAL_SIGNALS_MIN): cv.positive_int,
+        vol.Optional("scan_interval_outages", default=DEFAULT_SCAN_INTERVAL_OUTAGES_MIN): cv.positive_int,
+        vol.Optional("scan_interval_readings", default=DEFAULT_SCAN_INTERVAL_READINGS_MIN): cv.positive_int,
+    }
+)
+
+CONFIG_SCHEMA = vol.Schema({DOMAIN: DOMAIN_SCHEMA}, extra=vol.ALLOW_EXTRA)
+
+
+@dataclass
+class CezData:
+    header: Dict[str, Any]
+    supply_point: Dict[str, Any]
+    supply_point_detail: Dict[str, Any]
+    readings: List[Dict[str, Any]]
+    signals: Dict[str, Any]
+    outages_for_ean: List[Dict[str, Any]]
+
+
+class CezHub:
+    def __init__(self, hass: HomeAssistant, username: str, password: str,
+                 scan_signals_min: int, scan_outages_min: int, scan_readings_min: int) -> None:
+        self.hass = hass
+        self._client = CezDistribuceRestClient()
+        self._username = username
+        self._password = password
+
+        # Filled after login
+        self.data: Optional[CezData] = None
+
+        self.signals_coordinator: Optional[DataUpdateCoordinator] = None
+        self.outages_coordinator: Optional[DataUpdateCoordinator] = None
+        self.readings_coordinator: Optional[DataUpdateCoordinator] = None
+
+        self._scan_signals = dt.timedelta(minutes=scan_signals_min)
+        self._scan_outages = dt.timedelta(minutes=scan_outages_min)
+        self._scan_readings = dt.timedelta(minutes=scan_readings_min)
+
+    @property
+    def ean(self) -> Optional[str]:
+        try:
+            return self.data.supply_point_detail.get("ean") if self.data else None
+        except Exception:
+            return None
+
+    async def _login_and_load_static(self) -> None:
+        def _blocking_login_and_load():
+            self._client.login(self._username, self._password)
+            header = self._client.common_header()
+            supply_points = self._client.get_supply_points()
+            # Pick the first visible supply point
+            sp_block = supply_points["vstelleBlocks"]["blocks"][0]
+            sp = sp_block["vstelles"][0]
+            uid = sp["uid"]
+            sp_detail = self._client.get_supply_point_detail(uid)
+            readings = self._client.get_readings(uid)
+            signals = self._client.get_signals(sp_detail["ean"]) if sp_detail.get("hdo") else {"signals": []}
+            outages = self._client.get_outages(ean=sp_detail["ean"]) or []
+            self.data = CezData(header, sp, sp_detail, readings, signals, outages)
+
+        await self.hass.async_add_executor_job(_blocking_login_and_load)
+
+    async def async_setup(self) -> None:
+        await self._login_and_load_static()
+
+        async def _update_signals() -> Dict[str, Any]:
+            def _blocking():
+                if not self.data:
+                    return {"signals": []}
+                try:
+                    return self._client.get_signals(self.data.supply_point_detail["ean"])
+                except Exception as e:
+                    _LOGGER.warning("Failed refreshing signals: %s", e)
+                    return self.data.signals
+            return await self.hass.async_add_executor_job(_blocking)
+
+        async def _update_outages() -> List[Dict[str, Any]]:
+            def _blocking():
+                if not self.data:
+                    return []
+                try:
+                    return self._client.get_outages(ean=self.data.supply_point_detail["ean"]) or []
+                except Exception as e:
+                    _LOGGER.warning("Failed refreshing outages: %s", e)
+                    return self.data.outages_for_ean
+            return await self.hass.async_add_executor_job(_blocking)
+
+        async def _update_readings() -> List[Dict[str, Any]]:
+            def _blocking():
+                if not self.data:
+                    return []
+                try:
+                    uid = self.data.supply_point["uid"]
+                    return self._client.get_readings(uid)
+                except Exception as e:
+                    _LOGGER.warning("Failed refreshing readings: %s", e)
+                    return self.data.readings
+            return await self.hass.async_add_executor_job(_blocking)
+
+        self.signals_coordinator = DataUpdateCoordinator(
+            self.hass,
+            _LOGGER,
+            name="ČEZ Distribuce signals",
+            update_method=_update_signals,
+            update_interval=self._scan_signals,
+        )
+        self.outages_coordinator = DataUpdateCoordinator(
+            self.hass,
+            _LOGGER,
+            name="ČEZ Distribuce outages",
+            update_method=_update_outages,
+            update_interval=self._scan_outages,
+        )
+        self.readings_coordinator = DataUpdateCoordinator(
+            self.hass,
+            _LOGGER,
+            name="ČEZ Distribuce readings",
+            update_method=_update_readings,
+            update_interval=self._scan_readings,
+        )
+
+        # Prime the coordinators
+        await self.signals_coordinator.async_config_entry_first_refresh()
+        await self.outages_coordinator.async_config_entry_first_refresh()
+        await self.readings_coordinator.async_config_entry_first_refresh()
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    # YAML setup (legacy). If present, set up a single hub and load platforms via discovery.
+    if DOMAIN not in config:
+        return True
+
+    conf = config[DOMAIN]
+    username = conf[CONF_USERNAME]
+    password = conf[CONF_PASSWORD]
+    scan_signals = conf.get("scan_interval_signals", DEFAULT_SCAN_INTERVAL_SIGNALS_MIN)
+    scan_outages = conf.get("scan_interval_outages", DEFAULT_SCAN_INTERVAL_OUTAGES_MIN)
+    scan_readings = conf.get("scan_interval_readings", DEFAULT_SCAN_INTERVAL_READINGS_MIN)
+
+    hub = CezHub(hass, username, password, scan_signals, scan_outages, scan_readings)
+    await hub.async_setup()
+
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN]["legacy"] = hub
+
+    for platform in PLATFORMS:
+        hass.helpers.discovery.async_load_platform(platform, DOMAIN, {}, config)
+
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    data = entry.data
+    username = data[CONF_USERNAME]
+    password = data[CONF_PASSWORD]
+    scan_signals = data.get("scan_interval_signals", DEFAULT_SCAN_INTERVAL_SIGNALS_MIN)
+    scan_outages = data.get("scan_interval_outages", DEFAULT_SCAN_INTERVAL_OUTAGES_MIN)
+    scan_readings = data.get("scan_interval_readings", DEFAULT_SCAN_INTERVAL_READINGS_MIN)
+
+    hub = CezHub(hass, username, password, scan_signals, scan_outages, scan_readings)
+    await hub.async_setup()
+
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = hub
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
+            hass.data[DOMAIN].pop(entry.entry_id)
+        # Clean up domain dict if empty
+        if DOMAIN in hass.data and not hass.data[DOMAIN]:
+            hass.data.pop(DOMAIN)
+    return unload_ok

@@ -1,0 +1,19 @@
+{
+  "config": {
+    "title": "ČEZ Distribuce",
+    "step": {
+      "user": {
+        "title": "Připojení k ČEZ Distribuce",
+        "description": "Zadejte své přihlašovací údaje do portálu.",
+        "data": {
+          "username": "Uživatelské jméno",
+          "password": "Heslo"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Neplatné uživatelské jméno nebo heslo.",
+      "cannot_connect": "Nepodařilo se připojit ke službě. Zkuste to prosím později."
+    }
+  }
+}

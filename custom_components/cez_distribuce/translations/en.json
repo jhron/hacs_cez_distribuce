@@ -1,0 +1,19 @@
+{
+  "config": {
+    "title": "ČEZ Distribuce",
+    "step": {
+      "user": {
+        "title": "Connect to ČEZ Distribuce",
+        "description": "Enter your portal credentials.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid username or password.",
+      "cannot_connect": "Failed to connect to the service. Try again later."
+    }
+  }
+}
