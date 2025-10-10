@@ -1,8 +1,6 @@
 {
-	"name": "ČEZ Distribuce",
-	"country": [
-		"CZ"
-	],
-	"homeassistant": "2025.10.0",
-	"render_readme": true
+  "name": "ČEZ Distribuce",
+  "country": ["CZ"],
+  "homeassistant": "2024.6.0",
+  "render_readme": true
 }
