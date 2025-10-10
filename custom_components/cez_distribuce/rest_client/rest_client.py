@@ -1,6 +1,7 @@
 import requests
 import urllib.parse
 from bs4 import BeautifulSoup
+from typing import Sequence
 
 BASE_URL = 'https://dip.cezdistribuce.cz/irj/portal'
 CAS_BASE_URL = 'https://cas.cez.cz/cas'
@@ -16,6 +17,7 @@ AUTHORIZE_URL = f'{CAS_BASE_URL}/oidc/authorize?response_type={RESPONSE_TYPE}&re
 class CezDistribuceRestClient:
     def __init__(self):
         self._session = requests.Session()
+        self._anonymous_session = requests.Session()
 
     def login(self, username, password):
         response = self._session.get(LOGIN_URL)
@@ -29,11 +31,17 @@ class CezDistribuceRestClient:
         })
         self._session.get(AUTHORIZE_URL)
         self.refresh_api_token()
+        self.refresh_anon_api_token()
 
     def refresh_api_token(self):
         # Hledání X-Request-Tokenu v těle finální stránky
         api_token = self._session.get(BASE_URL + '/rest-auth-api?path=/token/get').json()["data"]
         self._session.headers.update({'X-Request-Token': api_token})
+
+    def refresh_anon_api_token(self):
+        # Hledání X-Request-Tokenu v těle finální stránky
+        api_token = self._session.get(BASE_URL + '/anonymous/rest-auth-api?path=/token/get').json()["data"]
+        self._anonymous_session.headers.update({'X-Request-Token': api_token})
 
     def common_header(self):
         return self._session.get(BASE_URL + '/common-api?path=/common/header').json()['data']
@@ -52,3 +60,20 @@ class CezDistribuceRestClient:
 
     def get_signals(self, ean):
         return self._session.get(BASE_URL + '/prehled-om?path=supply-point-detail/signals/' + ean).json()['data']
+
+    def get_outages(self, ean=None, meterNumber=None, psc=None, mesto=None, ulice=None):
+        if (ean):
+            payload = {"eans": ean if is_array(ean) else [ean]}
+        elif (meterNumber):
+            payload = {"meterNumbers": meterNumber if is_array(meterNumber) else [meterNumber]}
+        elif (psc and mesto):
+            payload = {"psc": psc, "mesto": mesto, "ulice": ulice}
+        else:
+            raise ValueError("Either ean, meterNumber or psc and mesto must be provided")
+        return self._anonymous_session.post(
+            BASE_URL + '/anonymous/vyhledani-odstavek?path=shutdown-search',
+            json=payload).json()['data']
+
+
+def is_array(value) -> bool:
+    return isinstance(value, Sequence) and not isinstance(value, str)
