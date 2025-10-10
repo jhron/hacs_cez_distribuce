@@ -35,6 +35,13 @@ class CezTariffCalendar(CoordinatorEntity, CalendarEntity):
         self._attr_name = "HDO – nízký tarif"
         self._attr_unique_id = f"{hub.ean}_hdo_calendar"
 
+    @property
+    def event(self) -> Optional[CalendarEvent]:
+        # Minimal implementation to satisfy CalendarEntity API.
+        # We return None so the entity reports state "off" by default.
+        # The full list of events is provided via async_get_events.
+        return None
+
     async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[CalendarEvent]:
         data: Dict[str, Any] = self.coordinator.data or {}
         signals: List[Dict[str, Any]] = data.get("signals", [])
@@ -74,6 +81,12 @@ class CezOutageCalendar(CoordinatorEntity, CalendarEntity):
         self._hub = hub
         self._attr_name = "ČEZ Odstávky"
         self._attr_unique_id = f"{hub.ean}_outages_calendar"
+
+    @property
+    def event(self) -> Optional[CalendarEvent]:
+        # Minimal implementation. We don't compute a current event here;
+        # calendars will still expose events via async_get_events.
+        return None
 
     async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[CalendarEvent]:
         outages: List[Dict[str, Any]] = self.coordinator.data or []
