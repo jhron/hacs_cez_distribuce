@@ -50,3 +50,20 @@ Poznámky:
 - Integrace aktuálně pracuje s prvním nalezeným odběrným místem (OM) ve vašem účtu.
 - Nízký tarif je odvozen ze seznamu časů v odpovědi "Signály". Pokud portál HDO pro vaše OM není dostupný, senzor zůstane vypnutý a kalendář bude prázdný.
 - Odstávky se načítají podle EAN vašeho OM.
+
+## Konfigurace přes UI (Config Flow)
+
+Integraci lze přidat také přes Nastavení → Zařízení a služby → Přidat integraci → „ČEZ Distribuce“. Budete vyzváni k zadání uživatelského jména a hesla do portálu ČEZ Distribuce. Při ověřování přihlášení se integrace pokusí připojit a načíst základní informace. Pokud přihlášení selže, uvidíte chybu:
+- „invalid_auth“ – nesprávné jméno nebo heslo
+- „cannot_connect“ – služba je nedostupná nebo došlo k jiné chybě připojení
+
+## Testy
+
+Repozitář obsahuje základní jednotkové testy pro pomocné funkce REST klienta. Testy spustíte lokálně takto:
+
+- nainstalujte závislosti pro testování (pytest):
+  - python -m pip install -U pytest
+- spusťte testy v kořenovém adresáři repozitáře:
+  - pytest -q
+
+> Pozn.: Testy nevyžadují přímé připojení k portálu a neprovádějí žádné reálné přihlášení.
