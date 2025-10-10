@@ -17,7 +17,6 @@ MUJ_CEZ_REDIRECT_URL = 'https://auth.cez.cz/commonauth'
 MUJ_CEZ_CLIENT_ID = 'bRKf6m9CxCYAQ7bY.onpremise.cpr.wso2.apim.prod'
 MUJ_CEZ_APP_NAME = 'CEZDATA.CORP_qycprwso2_cprCAColFe-prod_PRODUCTION'
 MUJ_CES_STATE = '72fd5e12-9dea-4599-a9fb-0e4af7e58f6d%2COIDC'
-'https://cas.cez.cz/cas/login?service=https%3A%2F%2Fcas.cez.cz%2Fcas%2Foauth2.0%2FcallbackAuthorize%3Fclient_id%3DbRKf6m9CxCYAQ7bY.onpremise.cpr.wso2.apim.prod%26redirect_uri%3Dhttps%253A%252F%252Fauth.cez.cz%252Fcommonauth%26response_type%3Dcode%26client_name%3DCasOAuthClient'
 MUJ_CEZ_AUTHORIZE = f'{CAS_BASE_URL}/oidc/authorize?scope={SCOPE}&response_type={RESPONSE_TYPE}&redirect_uri={urllib.parse.quote(MUJ_CEZ_REDIRECT_URL)}&client_id={MUJ_CEZ_CLIENT_ID}&state={MUJ_CES_STATE}&appName={MUJ_CEZ_APP_NAME}'
 
 logging.basicConfig(
@@ -27,8 +26,7 @@ logging.basicConfig(
 
 
 class AbstractCezRestClient:
-    def __init__(self, base_url, redirect_url, client_id, extra_params=None):
-        self._base_url = base_url
+    def __init__(self, redirect_url, client_id, extra_params=None):
         self._service = f'{CAS_BASE_URL}/oauth2.0/callbackAuthorize?client_id={client_id}&redirect_uri={urllib.parse.quote(redirect_url)}&response_type={RESPONSE_TYPE}&client_name={CLIENT_NAME}'
         self._login_url = f'{CAS_BASE_URL}/login?service={urllib.parse.quote(self._service)}'
         self._authorize_url = f'{CAS_BASE_URL}/oidc/authorize?scope={SCOPE}&response_type={RESPONSE_TYPE}&redirect_uri={urllib.parse.quote(redirect_url)}&client_id={client_id}'
@@ -109,6 +107,12 @@ class CezDistribuceRestClient(AbstractCezRestClient):
         return self._anonymous_session.post(
             self._base_url + '/anonymous/vyhledani-odstavek?path=shutdown-search',
             json=payload).json()['data']
+
+
+class MujCezRestClient(AbstractCezRestClient):
+    def __init__(self, base_url='https://auth.cez.cz/commonauth', client_id=MUJ_CEZ_CLIENT_ID):
+        self._base_url = base_url
+        super().__init__(self._base_url, client_id, extra_params={'appName': MUJ_CEZ_APP_NAME})
 
 
 def is_array(value) -> bool:
