@@ -1,3 +1,11 @@
+"""Config Flow for ČEZ Distribuce integration.
+
+This module implements the Home Assistant UI (Config Entries) flow allowing
+users to add the integration by providing their ČEZ Distribuce credentials.
+Credentials are validated by performing a lightweight login via the REST client
+in a background executor thread. Common error codes are returned for HA to
+render localized error messages.
+"""
 from __future__ import annotations
 
 import logging

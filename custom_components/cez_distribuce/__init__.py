@@ -1,3 +1,19 @@
+"""Home Assistant integration for ČEZ Distribuce.
+
+This module wires the integration into Home Assistant, defines configuration
+schema (both YAML legacy and Config Entry), and sets up a hub (CezHub) that
+coordinates data fetching from the ČEZ Distribuce web portal using a simple
+REST client.
+
+Key entities:
+- CezHub: central object that logs in once and manages refresh coordinators
+  for signals (HDO), outages and meter readings.
+- async_setup/async_setup_entry: standard HA entry points for YAML and UI flows.
+- async_unload_entry: unloads the integration platforms and cleans up stored data.
+
+The implementation avoids direct network I/O in the event loop by delegating
+blocking work to the executor thread pool.
+"""
 import datetime as dt
 import logging
 from dataclasses import dataclass

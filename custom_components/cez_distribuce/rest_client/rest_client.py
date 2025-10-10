@@ -1,3 +1,15 @@
+"""REST clients and helpers for interacting with ČEZ services.
+
+This module provides minimal programmatic access to the ČEZ Distribuce portal
+(and a helper client for Můj ČEZ login flow) by automating a browser-like
+OAuth2/CAS dance using requests.Session. It also contains a couple of helper
+functions used elsewhere in the integration.
+
+Notes:
+- The code is intentionally lightweight and tailored for this HA integration.
+- Network calls are synchronous; callers should ensure they are executed off
+  the event loop (e.g., via hass.async_add_executor_job).
+"""
 import logging
 import requests
 import urllib.parse
