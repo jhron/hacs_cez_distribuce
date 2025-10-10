@@ -13,16 +13,13 @@ class CezDistribuceRestClient:
     def login(self, username, password):
         response = self._session.get(LOGIN_URL)
         # Parsuje HTML a hledá skryté pole execution
-        soup = BeautifulSoup(response.text, 'html.parser')
-        execution_token = soup.find('input', {'name': 'execution'})['value']
-        login_data = {
+        self._session.post(LOGIN_URL, data={
             'username': username,
             'password': password,
-            'execution': execution_token,
+            'execution': BeautifulSoup(response.text, 'html.parser').find('input', {'name': 'execution'})['value'],
             '_eventId': 'submit',
             'geolocation': ''
-        }
-        self._session.post(LOGIN_URL, data=login_data)
+        })
         self._session.get(AUTHORIZE_URL)
         self.refresh_api_token()
 
