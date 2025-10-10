@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.core import HomeAssistant
@@ -46,12 +46,13 @@ class CezTariffCalendar(CoordinatorEntity, CalendarEntity):
     async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[CalendarEvent]:
         data: Dict[str, Any] = self.coordinator.data or {}
         signals: List[Dict[str, Any]] = data.get("signals", [])
-        events: List[CalendarEvent] = []
+
+        # 1) Parse and normalize all raw intervals into tz-aware datetimes
+        intervals: List[Tuple[dt.datetime, dt.datetime]] = []
         for s in signals:
             date_str = s.get("datum")  # e.g., '10.10.2025'
             if not date_str:
                 continue
-            # parse date
             try:
                 day = dt.datetime.strptime(date_str, "%d.%m.%Y")
             except Exception:
@@ -60,33 +61,49 @@ class CezTariffCalendar(CoordinatorEntity, CalendarEntity):
             for part in [p.strip() for p in casy.split(";") if p.strip()]:
                 try:
                     start_s, end_s = [x.strip() for x in part.split("-")]
-                    start_dt = dt.datetime.combine(day.date(), dt.time.fromisoformat(start_s))
-                    end_dt = dt.datetime.combine(day.date(), dt.time.fromisoformat(end_s))
+                    sdt = dt.datetime.combine(day.date(), dt.time.fromisoformat(start_s))
+                    edt = dt.datetime.combine(day.date(), dt.time.fromisoformat(end_s))
                 except Exception:
                     continue
-                # Normalize timezone: interpret parsed times in HA local timezone and convert
-                # to the timezone of the request window (start_date/end_date)
                 tz_ref = start_date.tzinfo or dt.timezone.utc
                 ha_tz = dt_util.get_time_zone(getattr(hass.config, "time_zone", None)) or tz_ref
-                if start_dt.tzinfo is None:
-                    start_dt = start_dt.replace(tzinfo=ha_tz)
-                if end_dt.tzinfo is None:
-                    end_dt = end_dt.replace(tzinfo=ha_tz)
-                # Convert to reference tz for comparison and exposure
-                start_dt = start_dt.astimezone(tz_ref)
-                end_dt = end_dt.astimezone(tz_ref)
-                # Handle overnight ranges if provided (end before start)
-                if end_dt <= start_dt:
-                    end_dt = end_dt + dt.timedelta(days=1)
-                if end_dt < start_date or start_dt > end_date:
-                    continue
-                ev = CalendarEvent(
-                    summary="Nízký tarif",
-                    start=start_dt,
-                    end=end_dt,
-                    description=f"Signal {s.get('signal','')} – {s.get('den','')}",
-                )
-                events.append(ev)
+                if sdt.tzinfo is None:
+                    sdt = sdt.replace(tzinfo=ha_tz)
+                if edt.tzinfo is None:
+                    edt = edt.replace(tzinfo=ha_tz)
+                sdt = sdt.astimezone(tz_ref)
+                edt = edt.astimezone(tz_ref)
+                if edt <= sdt:
+                    edt = edt + dt.timedelta(days=1)
+                intervals.append((sdt, edt))
+
+        if not intervals:
+            return []
+
+        # 2) Sort intervals by start and merge overlapping/contiguous ones
+        intervals.sort(key=lambda x: x[0])
+        merged: List[Tuple[dt.datetime, dt.datetime]] = []
+        for sdt, edt in intervals:
+            if not merged:
+                merged.append((sdt, edt))
+                continue
+            last_s, last_e = merged[-1]
+            # If overlaps or touches, extend the last interval
+            if sdt <= last_e:
+                if edt > last_e:
+                    merged[-1] = (last_s, edt)
+            else:
+                merged.append((sdt, edt))
+
+        # 3) Filter by requested window and create events (clip to window bounds to avoid visual spill)
+        events: List[CalendarEvent] = []
+        for sdt, edt in merged:
+            if edt < start_date or sdt > end_date:
+                continue
+            ev_start = max(sdt, start_date)
+            ev_end = min(edt, end_date)
+            events.append(CalendarEvent(summary="Nízký tarif", start=ev_start, end=ev_end))
+
         return events
 
 
