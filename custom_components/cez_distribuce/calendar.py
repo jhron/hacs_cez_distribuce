@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from . import CezHub
 from .const import DOMAIN
@@ -63,6 +64,20 @@ class CezTariffCalendar(CoordinatorEntity, CalendarEntity):
                     end_dt = dt.datetime.combine(day.date(), dt.time.fromisoformat(end_s))
                 except Exception:
                     continue
+                # Normalize timezone: interpret parsed times in HA local timezone and convert
+                # to the timezone of the request window (start_date/end_date)
+                tz_ref = start_date.tzinfo or dt.timezone.utc
+                ha_tz = dt_util.get_time_zone(getattr(hass.config, "time_zone", None)) or tz_ref
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=ha_tz)
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=ha_tz)
+                # Convert to reference tz for comparison and exposure
+                start_dt = start_dt.astimezone(tz_ref)
+                end_dt = end_dt.astimezone(tz_ref)
+                # Handle overnight ranges if provided (end before start)
+                if end_dt <= start_dt:
+                    end_dt = end_dt + dt.timedelta(days=1)
                 if end_dt < start_date or start_dt > end_date:
                     continue
                 ev = CalendarEvent(
@@ -108,6 +123,17 @@ class CezOutageCalendar(CoordinatorEntity, CalendarEntity):
                 end_dt = dt.datetime.combine(day.date(), dt.time.fromisoformat(end_s))
             except Exception:
                 continue
+            # Normalize timezone similar to tariff calendar
+            tz_ref = start_date.tzinfo or dt.timezone.utc
+            ha_tz = dt_util.get_time_zone(getattr(hass.config, "time_zone", None)) or tz_ref
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=ha_tz)
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=ha_tz)
+            start_dt = start_dt.astimezone(tz_ref)
+            end_dt = end_dt.astimezone(tz_ref)
+            if end_dt <= start_dt:
+                end_dt = end_dt + dt.timedelta(days=1)
             if end_dt < start_date or start_dt > end_date:
                 continue
             number = o.get("number", "")
