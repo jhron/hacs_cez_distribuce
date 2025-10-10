@@ -1,9 +1,16 @@
 import requests
+import urllib.parse
 from bs4 import BeautifulSoup
 
-LOGIN_URL = 'https://cas.cez.cz/cas/login?service=https%3A%2F%2Fcas.cez.cz%2Fcas%2Foauth2.0%2FcallbackAuthorize%3Fclient_id%3DfjR3ZL9zrtsNcDQF.onpremise.dip.sap.dipcezdistribucecz.prod%26redirect_uri%3Dhttps%253A%252F%252Fdip.cezdistribuce.cz%252Firj%252Fportal%26response_type%3Dcode%26client_name%3DCasOAuthClient'
-AUTHORIZE_URL = 'https://cas.cez.cz/cas/oidc/authorize?response_type=code&redirect_uri=https%3A%2F%2Fdip.cezdistribuce.cz%2Firj%2Fportal&client_id=fjR3ZL9zrtsNcDQF.onpremise.dip.sap.dipcezdistribucecz.prod&scope=openid'
 BASE_URL = 'https://dip.cezdistribuce.cz/irj/portal'
+CAS_BASE_URL = 'https://cas.cez.cz/cas'
+CLIENT_NAME = 'CasOAuthClient'
+CLIENT_ID = 'fjR3ZL9zrtsNcDQF.onpremise.dip.sap.dipcezdistribucecz.prod'
+RESPONSE_TYPE = 'code'
+SCOPE = 'openid'
+SERVICE = f'{CAS_BASE_URL}/oauth2.0/callbackAuthorize?client_id={CLIENT_ID}&redirect_uri={urllib.parse.quote(BASE_URL)}&response_type={RESPONSE_TYPE}&client_name={CLIENT_NAME}'
+LOGIN_URL = f'{CAS_BASE_URL}/login?service={urllib.parse.quote(SERVICE)}'
+AUTHORIZE_URL = f'{CAS_BASE_URL}/oidc/authorize?response_type={RESPONSE_TYPE}&redirect_uri={urllib.parse.quote(BASE_URL)}&client_id={CLIENT_ID}&scope={SCOPE}'
 
 
 class CezDistribuceRestClient:
