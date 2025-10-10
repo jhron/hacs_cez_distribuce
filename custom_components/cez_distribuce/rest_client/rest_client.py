@@ -16,8 +16,6 @@ CEZ_DISTRIBUCE_BASE_URL = 'https://dip.cezdistribuce.cz/irj/portal'
 MUJ_CEZ_REDIRECT_URL = 'https://auth.cez.cz/commonauth'
 MUJ_CEZ_CLIENT_ID = 'bRKf6m9CxCYAQ7bY.onpremise.cpr.wso2.apim.prod'
 MUJ_CEZ_APP_NAME = 'CEZDATA.CORP_qycprwso2_cprCAColFe-prod_PRODUCTION'
-MUJ_CES_STATE = '72fd5e12-9dea-4599-a9fb-0e4af7e58f6d%2COIDC'
-MUJ_CEZ_AUTHORIZE = f'{CAS_BASE_URL}/oidc/authorize?scope={SCOPE}&response_type={RESPONSE_TYPE}&redirect_uri={urllib.parse.quote(MUJ_CEZ_REDIRECT_URL)}&client_id={MUJ_CEZ_CLIENT_ID}&state={MUJ_CES_STATE}&appName={MUJ_CEZ_APP_NAME}'
 
 logging.basicConfig(
     level=logging.INFO,
@@ -110,7 +108,7 @@ class CezDistribuceRestClient(AbstractCezRestClient):
 
 
 class MujCezRestClient(AbstractCezRestClient):
-    def __init__(self, base_url='https://auth.cez.cz/commonauth', client_id=MUJ_CEZ_CLIENT_ID):
+    def __init__(self, base_url=MUJ_CEZ_REDIRECT_URL, client_id=MUJ_CEZ_CLIENT_ID):
         self._base_url = base_url
         super().__init__(self._base_url, client_id, extra_params={'appName': MUJ_CEZ_APP_NAME})
 
