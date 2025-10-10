@@ -67,3 +67,140 @@ Repozitář obsahuje základní jednotkové testy pro pomocné funkce REST klien
   - pytest -q
 
 > Pozn.: Testy nevyžadují přímé připojení k portálu a neprovádějí žádné reálné přihlášení.
+
+
+## Přehled projektu
+
+Tato neoficiální integrace pro Home Assistant přináší do vašeho chytrého domu informace z portálu ČEZ Distribuce. Zaměřuje se na praktické funkce pro automatizace:
+- dostupnost nízkého tarifu (NT, HDO) pro řízení spotřebičů,
+- kalendář HDO pro přehled spínacích oken,
+- kalendář plánovaných odstávek,
+- poslední stavové hodnoty elektroměru (VT/NT/celkem) pro reporty a energetické přehledy.
+
+Architektura integrace:
+- REST klient pro přihlášení a čtení dat z webového portálu ČEZ Distribuce (synchronní volání přes requests),
+- CezHub, který zajišťuje přihlášení, jednorázové načtení statických dat a periodické aktualizace vybraných částí,
+- platformy Home Assistanta: binary_sensor, calendar a sensor.
+
+Upozornění: Integrace není oficiální. Portál se může měnit a způsobit dočasné výpadky funkčnosti. Používejte na vlastní riziko.
+
+## Požadavky
+- Home Assistant (doporučeno 2023.0+).
+- Aktivní účet k portálu ČEZ Distribuce s přístupem k vašim OM/EAN.
+- Stabilní internetové připojení ze strany Home Assistanta.
+
+## Instalace přes HACS
+Je-li ve vašem HA nainstalován HACS:
+1. V HACS otevřete Integrations → menu vpravo nahoře → Custom repositories.
+2. Přidejte URL tohoto repozitáře jako „Integration“.
+3. Vyhledejte „ČEZ Distribuce“ a nainstalujte.
+4. Restartujte Home Assistant.
+5. Přidejte integraci přes UI (viz níže).
+
+## Manuální instalace (shrnutí)
+- Zkopírujte adresář `custom_components/cez_distribuce` do stejnojmenné složky ve vaší instalaci Home Assistanta.
+- Restartujte Home Assistant.
+
+## Konfigurace přes UI (Config Flow) – podrobněji
+Integraci přidejte v Nastavení → Zařízení a služby → Přidat integraci → „ČEZ Distribuce“. Zadejte uživatelské jméno a heslo do portálu ČEZ Distribuce. Při ověření přihlášení se vyzkouší přístup k portálu.
+- Chyba „invalid_auth“ značí chybné údaje.
+- Chyba „cannot_connect“ značí problém s dostupností služby či připojením.
+
+Volitelné intervaly aktualizace lze nastavit až po vytvoření záznamu integrace (v budoucnu mohou být přidány do rozšířeného dialogu). Výchozí hodnoty:
+- signály (HDO): 360 min
+- odstávky: 360 min
+- odečty: 1440 min
+
+## Konfigurace v configuration.yaml (alternativa)
+Základní příklad je uveden výše v této stránce. Volitelné klíče pro intervaly:
+- `scan_interval_signals` – v minutách
+- `scan_interval_outages` – v minutách
+- `scan_interval_readings` – v minutách
+
+## Vytvářené entity – detail
+- binary_sensor.nizky_tarif
+  - Stav „on“ v oknech nízkého tarifu dle HDO signálů pro první dostupné OM.
+- Kalendář „HDO – nízký tarif“
+  - Události s obdobími, kdy je NT aktivní.
+- Kalendář „ČEZ Odstávky“
+  - Naplánované odstávky dle EAN vašeho OM.
+- Senzory odečtů:
+  - Poslední stav VT (kWh), Poslední stav NT (kWh), Poslední stav celkem (kWh).
+
+Poznámky a omezení:
+- Aktuálně se pracuje s prvním nalezeným odběrným místem v účtu.
+- Pokud pro OM nejsou dostupné HDO signály, kalendář HDO bude prázdný a binární senzor zůstane vypnutý.
+- V případě dočasného výpadku portálu se integrace snaží použít poslední známá data.
+
+## Příklady použití
+
+1) Automatické zapnutí bojleru pouze během NT:
+
+```yaml
+alias: Zapnout bojler v NT
+trigger:
+  - platform: state
+    entity_id: binary_sensor.nizky_tarif
+    to: 'on'
+action:
+  - service: switch.turn_on
+    target:
+      entity_id: switch.bojler
+```
+
+2) Vypnutí bojleru po konci NT:
+
+```yaml
+alias: Vypnout bojler mimo NT
+trigger:
+  - platform: state
+    entity_id: binary_sensor.nizky_tarif
+    to: 'off'
+action:
+  - service: switch.turn_off
+    target:
+      entity_id: switch.bojler
+```
+
+3) Zobrazení příštího okna NT z kalendáře v šabloně:
+
+```yaml
+sensor:
+  - platform: template
+    sensors:
+      pristi_nt:
+        friendly_name: "Příští NT okno"
+        value_template: >-
+          {{ state_attr('calendar.hdo_nizky_tarif','start_time') }} – {{ state_attr('calendar.hdo_nizky_tarif','end_time') }}
+```
+
+## Řešení problémů
+- Ověřte, že se přihlásíte do portálu ČEZ Distribuce se stejnými údaji v běžném prohlížeči.
+- V Nastavení → Systém → Záznamy zapněte ladicí logování pro komponentu, např. v configuration.yaml:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.cez_distribuce: debug
+```
+
+- Dočasné chyby portálu mohou vést k „cannot_connect“. Zkuste to znovu později.
+- Po změně hesla odeberte a znovu přidejte integraci.
+
+## Soukromí a zabezpečení
+- Přihlašovací údaje jsou uloženy v bezpečném úložišti Home Assistanta a používány pouze pro načítání údajů z portálu.
+- Integrace neodesílá data třetím stranám mimo ČEZ Distribuce.
+
+## Vývoj a přispívání
+- Testy spustíte lokálně pomocí `pytest -q` (viz kapitola Testy výše).
+- Pull Requesty s vylepšeními a opravami jsou vítány. Prosíme o stručný popis změn a doplnění testů, pokud je to možné.
+
+## Nahlášení chyb a návrhy
+- Otevírejte prosím issues v GitHub repozitáři s co nejpřesnějším popisem problému, výpisem z logu a verzí HA.
+
+## Licence
+Distribuováno pod licencí uvedenou v souboru LICENSE tohoto repozitáře.
+
+## Poděkování
+Díky komunitě Home Assistant a projektu HACS za nástroje a inspiraci.
