@@ -32,24 +32,23 @@ class CezDistribuceRestClient:
 
     def refresh_api_token(self):
         # Hledání X-Request-Tokenu v těle finální stránky
-        response = self._session.get(BASE_URL + '/rest-auth-api?path=/token/get')
-        api_token = response.json()["data"]
+        api_token = self._session.get(BASE_URL + '/rest-auth-api?path=/token/get').json()["data"]
         self._session.headers.update({'X-Request-Token': api_token})
 
     def common_header(self):
-        return self._session.get(BASE_URL + '/common-api?path=/common/header').json()
+        return self._session.get(BASE_URL + '/common-api?path=/common/header').json()['data']
 
     def get_supply_points(self):
         return self._session.post(BASE_URL + '/vyhledani-om?path=/vyhledaniom/zakladniInfo/50/PREHLED_OM_CELEK',
-                                  json={"nekontrolovatPrislusnostOM": False}).json()
+                                  json={"nekontrolovatPrislusnostOM": False}).json()['data']
 
     def get_supply_point_detail(self, uid):
-        return self._session.get(BASE_URL + '/prehled-om?path=supply-point-detail/' + uid).json()
+        return self._session.get(BASE_URL + '/prehled-om?path=supply-point-detail/' + uid).json()['data']
 
     def get_readings(self, uid):
         return self._session.post(
             BASE_URL + '/prehled-om?path=supply-point-detail/meter-reading-history/' + uid + '/false',
-            json={}).json
+            json={}).json()['data']
 
     def get_signals(self, ean):
-        return self._session.get(BASE_URL + '/prehled-om?path=supply-point-detail/signals/' + ean).json()
+        return self._session.get(BASE_URL + '/prehled-om?path=supply-point-detail/signals/' + ean).json()['data']
