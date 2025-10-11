@@ -14,7 +14,8 @@ from .const import DOMAIN
 
 async def async_setup_platform(hass: HomeAssistant, config, async_add_entities, discovery_info=None):
     # Legacy YAML path
-    hub: CezHub = hass.data[DOMAIN]["legacy"] if isinstance(hass.data.get(DOMAIN), dict) and "legacy" in hass.data[DOMAIN] else hass.data[DOMAIN]
+    hub: CezHub = hass.data[DOMAIN]["legacy"] if isinstance(hass.data.get(DOMAIN), dict) and "legacy" in hass.data[
+        DOMAIN] else hass.data[DOMAIN]
     # Build per-EAN entities
     entities = []
     points = getattr(hub, "points", None) or ([hub.data] if getattr(hub, "data", None) else [])
@@ -22,12 +23,11 @@ async def async_setup_platform(hass: HomeAssistant, config, async_add_entities, 
         ean = (p.supply_point_detail or {}).get("ean")
         if not ean:
             continue
-        entities.append(CezTariffCalendar(hub, ean))
         entities.append(CezOutageCalendar(hub, ean))
         entities.append(CezCurrentSignalCalendar(hub, ean))
     # Fallback: if nothing created, add single default entities (for backward compat)
     if not entities:
-        entities = [CezTariffCalendar(hub, hub.ean), CezOutageCalendar(hub, hub.ean), CezCurrentSignalCalendar(hub, hub.ean)]
+        entities = [CezOutageCalendar(hub, hub.ean), CezCurrentSignalCalendar(hub, hub.ean)]
     async_add_entities(entities)
 
 
@@ -39,105 +39,11 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         ean = (p.supply_point_detail or {}).get("ean")
         if not ean:
             continue
-        entities.append(CezTariffCalendar(hub, ean))
         entities.append(CezOutageCalendar(hub, ean))
         entities.append(CezCurrentSignalCalendar(hub, ean))
     if not entities:
-        entities = [CezTariffCalendar(hub, hub.ean), CezOutageCalendar(hub, hub.ean), CezCurrentSignalCalendar(hub, hub.ean)]
+        entities = [CezOutageCalendar(hub, hub.ean), CezCurrentSignalCalendar(hub, hub.ean)]
     async_add_entities(entities)
-
-
-class CezTariffCalendar(CoordinatorEntity, CalendarEntity):
-    def __init__(self, hub: CezHub, ean: Optional[str]) -> None:
-        super().__init__(hub.signals_coordinator)
-        self._hub = hub
-        self._ean = ean
-        self._attr_name = "HDO – nízký tarif"
-        self._attr_unique_id = f"{ean}_hdo_calendar" if ean else f"{hub.ean}_hdo_calendar"
-
-    @property
-    def event(self) -> Optional[CalendarEvent]:
-        # Minimal implementation to satisfy CalendarEntity API.
-        # We return None so the entity reports state "off" by default.
-        # The full list of events is provided via async_get_events.
-        return None
-
-    async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[
-        CalendarEvent]:
-        data: Dict[str, Any] = self.coordinator.data or {}
-        # Support both legacy single-EAN responses and new map {ean: signals}
-        if "signals" in data:
-            signals: List[Dict[str, Any]] = data.get("signals", [])
-        else:
-            signals = (data.get(self._ean) or {}).get("signals", [])
-
-        # 1) Parse and normalize all raw intervals into tz-aware datetimes
-        intervals: List[Tuple[dt.datetime, dt.datetime]] = []
-        for s in signals:
-            date_str = s.get("datum")  # e.g., '10.10.2025'
-            if not date_str:
-                continue
-            try:
-                day = dt.datetime.strptime(date_str, "%d.%m.%Y")
-            except Exception:
-                continue
-            casy = s.get("casy", "")
-            for part in [p.strip() for p in casy.split(";") if p.strip()]:
-                try:
-                    start_s, end_s = [x.strip() for x in part.split("-")]
-                    sdt = dt.datetime.combine(day.date(), dt.time.fromisoformat(start_s))
-                    edt = dt.datetime.combine(day.date(), dt.time.fromisoformat(end_s))
-                except Exception:
-                    continue
-                tz_ref = start_date.tzinfo or dt.timezone.utc
-                ha_tz = dt_util.get_time_zone(getattr(hass.config, "time_zone", None)) or tz_ref
-                if sdt.tzinfo is None:
-                    sdt = sdt.replace(tzinfo=ha_tz)
-                if edt.tzinfo is None:
-                    edt = edt.replace(tzinfo=ha_tz)
-                sdt = sdt.astimezone(tz_ref)
-                edt = edt.astimezone(tz_ref)
-                if edt <= sdt:
-                    edt = edt + dt.timedelta(days=1)
-                intervals.append((sdt, edt))
-
-        if not intervals:
-            return []
-
-        # 2) Sort intervals by start and merge overlapping/contiguous ones
-        intervals.sort(key=lambda x: x[0])
-        merged: List[Tuple[dt.datetime, dt.datetime]] = []
-        for sdt, edt in intervals:
-            if not merged:
-                merged.append((sdt, edt))
-                continue
-            last_s, last_e = merged[-1]
-            # If overlaps or touches, extend the last interval
-            if sdt <= last_e:
-                if edt > last_e:
-                    merged[-1] = (last_s, edt)
-            else:
-                merged.append((sdt, edt))
-
-        # 3) Filter by requested window and create events (clip to window bounds to avoid visual spill)
-        events: List[CalendarEvent] = []
-        for sdt, edt in merged:
-            if edt < start_date or sdt > end_date:
-                continue
-            ev_start = max(sdt, start_date)
-            ev_end = min(edt, end_date)
-            # Build location with EAN and address for this supply point
-            location_parts: List[str] = []
-            if self._ean:
-                location_parts.append(f"EAN {self._ean}")
-            addr = build_location_address(self._hub, self._ean)
-            if addr:
-                location_parts.append(addr)
-            location = " – ".join(location_parts) if location_parts else None
-            events.append(
-                CalendarEvent(summary="Nízký tarif", start=ev_start, end=ev_end, location=location, description=""))
-
-        return events
 
 
 class CezOutageCalendar(CoordinatorEntity, CalendarEntity):
@@ -214,7 +120,8 @@ class CezOutageCalendar(CoordinatorEntity, CalendarEntity):
                             street_number += ')'
                         desc.append(main_location + ', ' + street_name + ' ' + street_number)
                 events.append(
-                    CalendarEvent(summary=summary+' - '+main_location, start=start_dt, end=end_dt, description=";\n".join(desc),
+                    CalendarEvent(summary=summary + ' - ' + main_location, start=start_dt, end=end_dt,
+                                  description=";\n".join(desc),
                                   location=main_location))
         return events
 
