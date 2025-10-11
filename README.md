@@ -2,8 +2,7 @@
 
 Tato integrace se připojí k portálu ČEZ Distribuce a zveřejní do Home Assistanta:
 
-- binární senzor informující, zda je aktuálně nízký tarif (NT)
-- kalendář nízkého tarifu (HDO) s časy spínání
+- kalendář HDO se zobrazením aktuálního signálu a spínacích oken
 - kalendář plánovaných odstávek
 - senzory s posledními stavy VT, NT a součtem (pro reporty/energie)
 
@@ -28,8 +27,6 @@ cez_distribuce:
   # scan_interval_readings: 1440
 
 # Volitelně můžete povolit platformy také přes discovery, integrace je načte automaticky:
-# binary_sensor:
-#   - platform: cez_distribuce
 # calendar:
 #   - platform: cez_distribuce
 # sensor:
@@ -38,8 +35,7 @@ cez_distribuce:
 
 Po restartu integrace vytvoří:
 
-- `binary_sensor.nizky_tarif` (název "Nízký tarif") – zapnuto, když je právě NT podle signálů HDO.
-- Kalendář "HDO – nízký tarif" – obsahuje události NT z dat HDO.
+- Kalendář "HDO – aktuální signál" – zobrazuje aktivní signál HDO a nadcházející intervaly podle dat HDO.
 - Kalendář "ČEZ Odstávky" – obsahuje plánované odstávky pro vaše OM/EAN.
 - Senzory:
   - "Poslední stav VT" (kWh)
@@ -80,7 +76,7 @@ Tato neoficiální integrace pro Home Assistant přináší do vašeho chytrého
 Architektura integrace:
 - REST klient pro přihlášení a čtení dat z webového portálu ČEZ Distribuce (synchronní volání přes requests),
 - CezHub, který zajišťuje přihlášení, jednorázové načtení statických dat a periodické aktualizace vybraných částí,
-- platformy Home Assistanta: binary_sensor, calendar a sensor.
+- platformy Home Assistanta: calendar a sensor.
 
 Upozornění: Integrace není oficiální. Portál se může měnit a způsobit dočasné výpadky funkčnosti. Používejte na vlastní riziko.
 
@@ -118,60 +114,60 @@ Základní příklad je uveden výše v této stránce. Volitelné klíče pro i
 - `scan_interval_readings` – v minutách
 
 ## Vytvářené entity – detail
-- binary_sensor.nizky_tarif
-  - Stav „on“ v oknech nízkého tarifu dle HDO signálů pro první dostupné OM.
-- Kalendář „HDO – nízký tarif“
-  - Události s obdobími, kdy je NT aktivní.
+- Kalendář „HDO – aktuální signál“
+  - Události s obdobími dle platných HDO signálů pro vaše OM (EAN).
 - Kalendář „ČEZ Odstávky“
   - Naplánované odstávky dle EAN vašeho OM.
 - Senzory odečtů:
   - Poslední stav VT (kWh), Poslední stav NT (kWh), Poslední stav celkem (kWh).
 
 Poznámky a omezení:
-- Aktuálně se pracuje s prvním nalezeným odběrným místem v účtu.
-- Pokud pro OM nejsou dostupné HDO signály, kalendář HDO bude prázdný a binární senzor zůstane vypnutý.
+- Pro každé dostupné odběrné místo (OM) s EAN integrace vytvoří samostatné kalendáře a senzory. Pokud OM nemá dostupný EAN, může být přeskočeno.
+- Pokud pro OM nejsou dostupné HDO signály, kalendář HDO bude prázdný.
 - V případě dočasného výpadku portálu se integrace snaží použít poslední známá data.
 
 ## Příklady použití
 
-1) Automatické zapnutí bojleru pouze během NT:
+Pozn.: Názvy a entity_id kalendářů se mohou v instalaci lišit (např. podle EAN nebo aliasu). Přesný entity_id zjistíte v UI Home Assistanta na kartě entity.
+
+1) Zapnutí bojleru na začátku okna HDO:
 
 ```yaml
-alias: Zapnout bojler v NT
+alias: Zapnout bojler při startu HDO
 trigger:
-  - platform: state
-    entity_id: binary_sensor.nizky_tarif
-    to: 'on'
+  - platform: calendar
+    entity_id: calendar.hdo_aktualni_signal
+    event: start
 action:
   - service: switch.turn_on
     target:
       entity_id: switch.bojler
 ```
 
-2) Vypnutí bojleru po konci NT:
+2) Vypnutí bojleru na konci okna HDO:
 
 ```yaml
-alias: Vypnout bojler mimo NT
+alias: Vypnout bojler při konci HDO
 trigger:
-  - platform: state
-    entity_id: binary_sensor.nizky_tarif
-    to: 'off'
+  - platform: calendar
+    entity_id: calendar.hdo_aktualni_signal
+    event: end
 action:
   - service: switch.turn_off
     target:
       entity_id: switch.bojler
 ```
 
-3) Zobrazení příštího okna NT z kalendáře v šabloně:
+3) Zobrazení příštího okna z kalendáře v šabloně:
 
 ```yaml
 sensor:
   - platform: template
     sensors:
-      pristi_nt:
-        friendly_name: "Příští NT okno"
+      pristi_hdo_okno:
+        friendly_name: "Příští HDO okno"
         value_template: >-
-          {{ state_attr('calendar.hdo_nizky_tarif','start_time') }} – {{ state_attr('calendar.hdo_nizky_tarif','end_time') }}
+          {{ state_attr('calendar.hdo_aktualni_signal','start_time') }} – {{ state_attr('calendar.hdo_aktualni_signal','end_time') }}
 ```
 
 ## Řešení problémů
