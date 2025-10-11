@@ -1,21 +1,25 @@
-# ČEZ Distribuce – Home Assistant custom komponenta
+# ČEZ Distribuce – Home Assistant custom komponenta ⚡️
+
+[![Release](https://img.shields.io/github/v/release/konikvranik/hacs_cez_distribuce)](https://github.com/konikvranik/hacs_cez_distribuce/releases)
+[![Validate](https://github.com/konikvranik/hacs_cez_distribuce/actions/workflows/validate.yml/badge.svg)](https://github.com/konikvranik/hacs_cez_distribuce/actions/workflows/validate.yml)
+[![Release on tag](https://github.com/konikvranik/hacs_cez_distribuce/actions/workflows/release_on_tag.yml/badge.svg)](https://github.com/konikvranik/hacs_cez_distribuce/actions/workflows/release_on_tag.yml)
 
 Tato integrace se připojí k portálu ČEZ Distribuce a zveřejní do Home Assistanta:
 
-- kalendář HDO se zobrazením aktuálního signálu a spínacích oken
-- kalendář plánovaných odstávek
-- senzory s posledními stavy VT, NT a součtem (pro reporty/energie)
+- 🗓️ kalendář HDO se zobrazením aktuálního signálu a spínacích oken
+- 🚧 kalendář plánovaných odstávek
+- 📈 senzory s posledními stavy VT, NT a součtem (pro reporty/energie)
 
 Integrace používá klienta `custom_components.cez_distribuce.rest_client.rest_client.CezDistribuceRestClient` a vyžaduje přístupové údaje k portálu.
 
-Upozornění: Jedná se o neoficiální integraci. Používejte na vlastní riziko.
+⚠️ Upozornění: Jedná se o neoficiální integraci. Používejte na vlastní riziko.
 
-## Instalace
+## 🛠️ Instalace
 
 1. Zkopírujte celý adresář `custom_components/cez_distribuce` do adresáře `custom_components` ve vaší instalaci Home Assistanta.
 2. Restartujte Home Assistant.
 
-## Konfigurace (configuration.yaml)
+## ⚙️ Konfigurace (configuration.yaml)
 
 ```yaml
 cez_distribuce:
@@ -47,13 +51,13 @@ Poznámky:
 - Nízký tarif je odvozen ze seznamu časů v odpovědi "Signály". Pokud portál HDO pro vaše OM není dostupný, senzor zůstane vypnutý a kalendář bude prázdný.
 - Odstávky se načítají podle EAN vašeho OM.
 
-## Konfigurace přes UI (Config Flow)
+## 🧩 Konfigurace přes UI (Config Flow)
 
 Integraci lze přidat také přes Nastavení → Zařízení a služby → Přidat integraci → „ČEZ Distribuce“. Budete vyzváni k zadání uživatelského jména a hesla do portálu ČEZ Distribuce. Při ověřování přihlášení se integrace pokusí připojit a načíst základní informace. Pokud přihlášení selže, uvidíte chybu:
 - „invalid_auth“ – nesprávné jméno nebo heslo
 - „cannot_connect“ – služba je nedostupná nebo došlo k jiné chybě připojení
 
-## Testy
+## ✅ Testy
 
 Repozitář obsahuje základní jednotkové testy pro pomocné funkce REST klienta. Testy spustíte lokálně takto:
 
@@ -65,7 +69,7 @@ Repozitář obsahuje základní jednotkové testy pro pomocné funkce REST klien
 > Pozn.: Testy nevyžadují přímé připojení k portálu a neprovádějí žádné reálné přihlášení.
 
 
-## Přehled projektu
+## 📚 Přehled projektu
 
 Tato neoficiální integrace pro Home Assistant přináší do vašeho chytrého domu informace z portálu ČEZ Distribuce. Zaměřuje se na praktické funkce pro automatizace:
 - dostupnost nízkého tarifu (NT, HDO) pro řízení spotřebičů,
@@ -80,12 +84,12 @@ Architektura integrace:
 
 Upozornění: Integrace není oficiální. Portál se může měnit a způsobit dočasné výpadky funkčnosti. Používejte na vlastní riziko.
 
-## Požadavky
+## 📋 Požadavky
 - Home Assistant (doporučeno 2023.0+).
 - Aktivní účet k portálu ČEZ Distribuce s přístupem k vašim OM/EAN.
 - Stabilní internetové připojení ze strany Home Assistanta.
 
-## Instalace přes HACS
+## 🛒 Instalace přes HACS
 Je-li ve vašem HA nainstalován HACS:
 1. V HACS otevřete Integrations → menu vpravo nahoře → Custom repositories.
 2. Přidejte URL tohoto repozitáře jako „Integration“.
@@ -93,11 +97,11 @@ Je-li ve vašem HA nainstalován HACS:
 4. Restartujte Home Assistant.
 5. Přidejte integraci přes UI (viz níže).
 
-## Manuální instalace (shrnutí)
+## 📦 Manuální instalace (shrnutí)
 - Zkopírujte adresář `custom_components/cez_distribuce` do stejnojmenné složky ve vaší instalaci Home Assistanta.
 - Restartujte Home Assistant.
 
-## Konfigurace přes UI (Config Flow) – podrobněji
+## 🧩 Konfigurace přes UI (Config Flow) – podrobněji
 Integraci přidejte v Nastavení → Zařízení a služby → Přidat integraci → „ČEZ Distribuce“. Zadejte uživatelské jméno a heslo do portálu ČEZ Distribuce. Při ověření přihlášení se vyzkouší přístup k portálu.
 - Chyba „invalid_auth“ značí chybné údaje.
 - Chyba „cannot_connect“ značí problém s dostupností služby či připojením.
@@ -107,13 +111,13 @@ Poznámka k intervalům aktualizace: Při přidání přes UI se nastaví výcho
 - odstávky: 1440 min
 - odečty: 5 min
 
-## Konfigurace v configuration.yaml (alternativa)
+## ⚙️ Konfigurace v configuration.yaml (alternativa)
 Základní příklad je uveden výše v této stránce. Volitelné klíče pro intervaly:
 - `scan_interval_signals` – v minutách
 - `scan_interval_outages` – v minutách
 - `scan_interval_readings` – v minutách
 
-## Vytvářené entity – detail
+## 🧩 Vytvářené entity – detail
 - Kalendář „HDO – aktuální signál“
   - Události s obdobími dle platných HDO signálů pro vaše OM (EAN).
 - Kalendář „ČEZ Odstávky“
@@ -126,7 +130,7 @@ Poznámky a omezení:
 - Pokud pro OM nejsou dostupné HDO signály, kalendář HDO bude prázdný.
 - V případě dočasného výpadku portálu se integrace snaží použít poslední známá data.
 
-## Příklady použití
+## 💡 Příklady použití
 
 Pozn.: Názvy a entity_id kalendářů se mohou v instalaci lišit (např. podle EAN nebo aliasu). Přesný entity_id zjistíte v UI Home Assistanta na kartě entity.
 
@@ -170,7 +174,7 @@ sensor:
           {{ state_attr('calendar.hdo_aktualni_signal','start_time') }} – {{ state_attr('calendar.hdo_aktualni_signal','end_time') }}
 ```
 
-## Řešení problémů
+## 🧰 Řešení problémů
 - Ověřte, že se přihlásíte do portálu ČEZ Distribuce se stejnými údaji v běžném prohlížeči.
 - V Nastavení → Systém → Záznamy zapněte ladicí logování pro komponentu, např. v configuration.yaml:
 
@@ -184,19 +188,19 @@ logger:
 - Dočasné chyby portálu mohou vést k „cannot_connect“. Zkuste to znovu později.
 - Po změně hesla odeberte a znovu přidejte integraci.
 
-## Soukromí a zabezpečení
+## 🔒 Soukromí a zabezpečení
 - Přihlašovací údaje jsou uloženy v bezpečném úložišti Home Assistanta a používány pouze pro načítání údajů z portálu.
 - Integrace neodesílá data třetím stranám mimo ČEZ Distribuce.
 
-## Vývoj a přispívání
+## 🧑‍💻 Vývoj a přispívání
 - Testy spustíte lokálně pomocí `pytest -q` (viz kapitola Testy výše).
 - Pull Requesty s vylepšeními a opravami jsou vítány. Prosíme o stručný popis změn a doplnění testů, pokud je to možné.
 
-## Nahlášení chyb a návrhy
+## 🐛 Nahlášení chyb a návrhy
 - Otevírejte prosím issues v GitHub repozitáři s co nejpřesnějším popisem problému, výpisem z logu a verzí HA.
 
-## Licence
+## 📄 Licence
 Distribuováno pod licencí uvedenou v souboru LICENSE tohoto repozitáře.
 
-## Poděkování
+## 🙏 Poděkování
 Díky komunitě Home Assistant a projektu HACS za nástroje a inspiraci.
