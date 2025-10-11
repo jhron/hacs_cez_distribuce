@@ -74,6 +74,8 @@ class CezHub:
 
         # Filled after login
         self.data: Optional[CezData] = None
+        # All supply points for this account (first one is mirrored in self.data for backward compatibility)
+        self.points: List[CezData] = []
 
         self.signals_coordinator: Optional[DataUpdateCoordinator] = None
         self.outages_coordinator: Optional[DataUpdateCoordinator] = None
@@ -95,15 +97,33 @@ class CezHub:
             self._client.login(self._username, self._password)
             header = self._client.common_header()
             supply_points = self._client.get_supply_points()
-            # Pick the first visible supply point
-            sp_block = supply_points["vstelleBlocks"]["blocks"][0]
-            sp = sp_block["vstelles"][0]
-            uid = sp["uid"]
-            sp_detail = self._client.get_supply_point_detail(uid)
-            readings = self._client.get_readings(uid)
-            signals = self._client.get_signals(sp_detail["ean"]) if sp_detail.get("hdo") else {"signals": []}
-            outages = self._client.get_outages(ean=sp_detail["ean"]) or []
-            self.data = CezData(header, sp, sp_detail, readings, signals, outages)
+            # Build list of all visible supply points (across all blocks and vstelles)
+            self.points = []
+            for sp_block in (supply_points.get("vstelleBlocks", {}).get("blocks", []) or []):
+                for sp in (sp_block.get("vstelles", []) or []):
+                    try:
+                        uid = sp["uid"]
+                        sp_detail = self._client.get_supply_point_detail(uid)
+                        readings = self._client.get_readings(uid)
+                        ean = sp_detail.get("ean") or sp.get("ean")
+                        signals = self._client.get_signals(ean) if ean and sp_detail.get("hdo") else {"signals": []}
+                        outages = self._client.get_outages(ean=ean) or [] if ean else []
+                        self.points.append(CezData(header, sp, sp_detail, readings, signals, outages))
+                    except Exception as e:
+                        _LOGGER.warning("Failed to load supply point %s: %s", sp, e)
+            # Backward compatibility: mirror the first point into self.data
+            if self.points:
+                self.data = self.points[0]
+            else:
+                # Fallback to previous behavior if structure unexpected
+                sp_block = supply_points["vstelleBlocks"]["blocks"][0]
+                sp = sp_block["vstelles"][0]
+                uid = sp["uid"]
+                sp_detail = self._client.get_supply_point_detail(uid)
+                readings = self._client.get_readings(uid)
+                signals = self._client.get_signals(sp_detail["ean"]) if sp_detail.get("hdo") else {"signals": []}
+                outages = self._client.get_outages(ean=sp_detail["ean"]) or []
+                self.data = CezData(header, sp, sp_detail, readings, signals, outages)
 
         await self.hass.async_add_executor_job(_blocking_login_and_load)
 
@@ -112,36 +132,78 @@ class CezHub:
 
         async def _update_signals() -> Dict[str, Any]:
             def _blocking():
-                if not self.data:
-                    return {"signals": []}
+                result: Dict[str, Any] = {}
+                points = self.points if self.points else ([self.data] if self.data else [])
+                if not points:
+                    return result
+                for p in points:
+                    try:
+                        ean = p.supply_point_detail.get("ean")
+                        if not ean or not p.supply_point_detail.get("hdo"):
+                            continue
+                        result[ean] = self._client.get_signals(ean)
+                    except Exception as e:
+                        _LOGGER.warning("Failed refreshing signals for %s: %s", getattr(p.supply_point_detail, 'ean', '?'), e)
+                        # Fallback to last known
+                        if ean:
+                            result[ean] = p.signals
+                # Legacy compatibility: also provide 'signals' for the first point as a flat list
                 try:
-                    return self._client.get_signals(self.data.supply_point_detail["ean"])
-                except Exception as e:
-                    _LOGGER.warning("Failed refreshing signals: %s", e)
-                    return self.data.signals
+                    first_ean = self.data.supply_point_detail.get("ean") if self.data else None
+                    if first_ean and first_ean in result:
+                        val = result[first_ean]
+                        if isinstance(val, dict):
+                            result["signals"] = val.get("signals", [])
+                        else:
+                            result["signals"] = val
+                except Exception:
+                    pass
+                return result
             return await self.hass.async_add_executor_job(_blocking)
 
-        async def _update_outages() -> List[Dict[str, Any]]:
+        async def _update_outages() -> Dict[str, List[Dict[str, Any]]]:
             def _blocking():
-                if not self.data:
-                    return []
-                try:
-                    return self._client.get_outages(ean=self.data.supply_point_detail["ean"]) or []
-                except Exception as e:
-                    _LOGGER.warning("Failed refreshing outages: %s", e)
-                    return self.data.outages_for_ean
+                result: Dict[str, List[Dict[str, Any]]] = {}
+                points = self.points if self.points else ([self.data] if self.data else [])
+                if not points:
+                    return result
+                for p in points:
+                    try:
+                        ean = p.supply_point_detail.get("ean")
+                        if not ean:
+                            continue
+                        result[ean] = self._client.get_outages(ean=ean) or []
+                    except Exception as e:
+                        _LOGGER.warning("Failed refreshing outages for %s: %s", ean, e)
+                        if ean:
+                            result[ean] = p.outages_for_ean
+                return result
             return await self.hass.async_add_executor_job(_blocking)
 
-        async def _update_readings() -> List[Dict[str, Any]]:
+        async def _update_readings() -> Dict[str, List[Dict[str, Any]]]:
             def _blocking():
-                if not self.data:
-                    return []
+                result: Dict[str, List[Dict[str, Any]]] = {}
+                points = self.points if self.points else ([self.data] if self.data else [])
+                if not points:
+                    return result
+                for p in points:
+                    try:
+                        uid = p.supply_point.get("uid")
+                        if not uid:
+                            continue
+                        result[uid] = self._client.get_readings(uid)
+                    except Exception as e:
+                        _LOGGER.warning("Failed refreshing readings for %s: %s", uid, e)
+                        if uid:
+                            result[uid] = p.readings
+                # Legacy compatibility: also provide a flat 'readings' list for the first supply point
                 try:
-                    uid = self.data.supply_point["uid"]
-                    return self._client.get_readings(uid)
-                except Exception as e:
-                    _LOGGER.warning("Failed refreshing readings: %s", e)
-                    return self.data.readings
+                    first_uid = self.data.supply_point.get("uid") if self.data else None
+                    if first_uid and first_uid in result:
+                        result["readings"] = result[first_uid]
+                except Exception:
+                    pass
+                return result
             return await self.hass.async_add_executor_job(_blocking)
 
         self.signals_coordinator = DataUpdateCoordinator(

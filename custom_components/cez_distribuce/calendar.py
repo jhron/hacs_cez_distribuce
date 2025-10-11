@@ -14,30 +14,46 @@ from .const import DOMAIN
 
 async def async_setup_platform(hass: HomeAssistant, config, async_add_entities, discovery_info=None):
     # Legacy YAML path
-    hub: CezHub = hass.data[DOMAIN]["legacy"] if isinstance(hass.data.get(DOMAIN), dict) and "legacy" in hass.data[
-        DOMAIN] else hass.data[DOMAIN]
-    async_add_entities([
-        CezTariffCalendar(hub),
-        CezOutageCalendar(hub),
-        CezCurrentSignalCalendar(hub),
-    ])
+    hub: CezHub = hass.data[DOMAIN]["legacy"] if isinstance(hass.data.get(DOMAIN), dict) and "legacy" in hass.data[DOMAIN] else hass.data[DOMAIN]
+    # Build per-EAN entities
+    entities = []
+    points = getattr(hub, "points", None) or ([hub.data] if getattr(hub, "data", None) else [])
+    for p in points:
+        ean = (p.supply_point_detail or {}).get("ean")
+        if not ean:
+            continue
+        entities.append(CezTariffCalendar(hub, ean))
+        entities.append(CezOutageCalendar(hub, ean))
+        entities.append(CezCurrentSignalCalendar(hub, ean))
+    # Fallback: if nothing created, add single default entities (for backward compat)
+    if not entities:
+        entities = [CezTariffCalendar(hub, hub.ean), CezOutageCalendar(hub, hub.ean), CezCurrentSignalCalendar(hub, hub.ean)]
+    async_add_entities(entities)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     hub: CezHub = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([
-        CezTariffCalendar(hub),
-        CezOutageCalendar(hub),
-        CezCurrentSignalCalendar(hub),
-    ])
+    entities = []
+    points = getattr(hub, "points", None) or ([hub.data] if getattr(hub, "data", None) else [])
+    for p in points:
+        ean = (p.supply_point_detail or {}).get("ean")
+        if not ean:
+            continue
+        entities.append(CezTariffCalendar(hub, ean))
+        entities.append(CezOutageCalendar(hub, ean))
+        entities.append(CezCurrentSignalCalendar(hub, ean))
+    if not entities:
+        entities = [CezTariffCalendar(hub, hub.ean), CezOutageCalendar(hub, hub.ean), CezCurrentSignalCalendar(hub, hub.ean)]
+    async_add_entities(entities)
 
 
 class CezTariffCalendar(CoordinatorEntity, CalendarEntity):
-    def __init__(self, hub: CezHub) -> None:
+    def __init__(self, hub: CezHub, ean: Optional[str]) -> None:
         super().__init__(hub.signals_coordinator)
         self._hub = hub
+        self._ean = ean
         self._attr_name = "HDO – nízký tarif"
-        self._attr_unique_id = f"{hub.ean}_hdo_calendar"
+        self._attr_unique_id = f"{ean}_hdo_calendar" if ean else f"{hub.ean}_hdo_calendar"
 
     @property
     def event(self) -> Optional[CalendarEvent]:
@@ -49,7 +65,11 @@ class CezTariffCalendar(CoordinatorEntity, CalendarEntity):
     async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[
         CalendarEvent]:
         data: Dict[str, Any] = self.coordinator.data or {}
-        signals: List[Dict[str, Any]] = data.get("signals", [])
+        # Support both legacy single-EAN responses and new map {ean: signals}
+        if "signals" in data:
+            signals: List[Dict[str, Any]] = data.get("signals", [])
+        else:
+            signals = (data.get(self._ean) or {}).get("signals", [])
 
         # 1) Parse and normalize all raw intervals into tz-aware datetimes
         intervals: List[Tuple[dt.datetime, dt.datetime]] = []
@@ -106,19 +126,27 @@ class CezTariffCalendar(CoordinatorEntity, CalendarEntity):
                 continue
             ev_start = max(sdt, start_date)
             ev_end = min(edt, end_date)
+            # Build location with EAN and address for this supply point
+            location_parts: List[str] = []
+            if self._ean:
+                location_parts.append(f"EAN {self._ean}")
+            addr = build_location_address(self._hub, self._ean)
+            if addr:
+                location_parts.append(addr)
+            location = " – ".join(location_parts) if location_parts else None
             events.append(
-                CalendarEvent(summary="Nízký tarif", start=ev_start, end=ev_end, location=(
-                    build_location(self._hub)), description=""))
+                CalendarEvent(summary="Nízký tarif", start=ev_start, end=ev_end, location=location, description=""))
 
         return events
 
 
 class CezOutageCalendar(CoordinatorEntity, CalendarEntity):
-    def __init__(self, hub: CezHub) -> None:
+    def __init__(self, hub: CezHub, ean: Optional[str]) -> None:
         super().__init__(hub.outages_coordinator)
         self._hub = hub
+        self._ean = ean
         self._attr_name = "ČEZ Odstávky"
-        self._attr_unique_id = f"{hub.ean}_outages_calendar"
+        self._attr_unique_id = f"{ean}_outages_calendar" if ean else f"{hub.ean}_outages_calendar"
 
     @property
     def event(self) -> Optional[CalendarEvent]:
@@ -128,7 +156,11 @@ class CezOutageCalendar(CoordinatorEntity, CalendarEntity):
 
     async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[
         CalendarEvent]:
-        outages: List[Dict[str, Any]] = self.coordinator.data or []
+        data = self.coordinator.data or {}
+        if isinstance(data, list):
+            outages: List[Dict[str, Any]] = data
+        else:
+            outages = data.get(self._ean, [])
         events: List[CalendarEvent] = []
         for o in outages:
             try:
@@ -188,22 +220,22 @@ class CezOutageCalendar(CoordinatorEntity, CalendarEntity):
 
 
 class CezCurrentSignalCalendar(CoordinatorEntity, CalendarEntity):
-    """Calendar showing which HDO signal is valid over time for the first OM.
+    """Calendar showing which HDO signal is valid over time for the specific OM (by EAN)."""
 
-    It renders events named by signal (e.g., "Signál A1") for their time ranges.
-    The `event` property returns the currently active signal interval if any.
-    """
-
-    def __init__(self, hub: CezHub) -> None:
+    def __init__(self, hub: CezHub, ean: Optional[str]) -> None:
         super().__init__(hub.signals_coordinator)
         self._hub = hub
+        self._ean = ean
         self._attr_name = "HDO – aktuální signál"
-        self._attr_unique_id = f"{hub.ean}_current_signal_calendar"
+        self._attr_unique_id = f"{ean}_current_signal_calendar" if ean else f"{hub.ean}_current_signal_calendar"
 
     @property
     def event(self) -> Optional[CalendarEvent]:
         data: Dict[str, Any] = self.coordinator.data or {}
-        signals: List[Dict[str, Any]] = data.get("signals", [])
+        if "signals" in data:
+            signals: List[Dict[str, Any]] = data.get("signals", [])
+        else:
+            signals = (data.get(self._ean) or {}).get("signals", [])
         if not signals:
             return None
         now = dt_util.now()
@@ -243,14 +275,25 @@ class CezCurrentSignalCalendar(CoordinatorEntity, CalendarEntity):
                 if edt <= sdt:
                     edt = edt + dt.timedelta(days=1)
                 if sdt <= now <= edt:
-                    return CalendarEvent(summary=f"Signál {name}", start=sdt, end=edt, location=(
-                        build_location(self._hub)))
+                    # Build location string with EAN and address for this OM
+                    location_parts: List[str] = []
+                    if self._ean:
+                        location_parts.append(f"EAN {self._ean}")
+                    addr = build_location_address(self._hub, self._ean)
+                    if addr:
+                        location_parts.append(addr)
+                    location = " – ".join(location_parts) if location_parts else None
+                    return CalendarEvent(summary=f"Signál {name}", start=sdt, end=edt, location=location)
         return None
 
     async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[
         CalendarEvent]:
         data: Dict[str, Any] = self.coordinator.data or {}
-        signals: List[Dict[str, Any]] = data.get("signals", [])
+        # Support both legacy single-EAN responses and new map {ean: signals}
+        if "signals" in data:
+            signals: List[Dict[str, Any]] = data.get("signals", [])
+        else:
+            signals = (data.get(self._ean) or {}).get("signals", [])
         if not signals:
             return []
         tz_ref = start_date.tzinfo or dt.timezone.utc
@@ -317,34 +360,52 @@ class CezCurrentSignalCalendar(CoordinatorEntity, CalendarEntity):
         return events
 
 
-def _address_for_ean(data) -> Optional[str]:
-    """Best-effort formatter of supply point address for the current EAN.
-
-    We try several common keys observed in ČEZ responses. If nothing sensible
-    is found, returns None. The function is defensive to avoid breaking the
-    calendar when data are missing or the schema changes.
-    """
+def _address_from_detail(spd: Dict[str, Any]) -> Optional[str]:
     try:
-        if not data:
-            return None
-        spd = data.supply_point_detail or {}
-        addr_node = spd['adresa']
-        if not addr_node:
-            return None
-        return addr_node['adresaComplete']
+        # Prefer nested address structure if present
+        addr_node = spd.get("adresa") or spd.get("address")
+        if isinstance(addr_node, dict):
+            for key in ("adresaComplete", "complete", "full"):
+                val = addr_node.get(key)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
+        # Compose from parts as fallback
+        street = spd.get("ulice") or spd.get("uliceNazev") or spd.get("street")
+        number = spd.get("cisloPopisne") or spd.get("cp") or spd.get("cisloDomovni") or spd.get("houseNumber")
+        city = spd.get("mesto") or spd.get("obec") or spd.get("city")
+        psc = spd.get("psc") or spd.get("zip") or spd.get("pscKod")
+        parts: List[str] = []
+        if street and number:
+            parts.append(f"{street} {number}")
+        elif street:
+            parts.append(str(street))
+        elif number:
+            parts.append(str(number))
+        locality: List[str] = []
+        if psc:
+            locality.append(str(psc))
+        if city:
+            locality.append(str(city))
+        if locality:
+            parts.append(", ".join(locality))
+        addr = ", ".join([p for p in parts if p and str(p).strip()])
+        return addr if addr else None
     except Exception:
         return None
 
 
-def build_location(hub) -> str | None:
-    # Build location text including EAN and address if available
-    location_parts: List[str] = []
+def build_location_address(hub: CezHub, ean: Optional[str]) -> Optional[str]:
+    # Find address for provided EAN across all points, fallback to first point
     try:
-        if hub.ean:
-            location_parts.append(f"EAN {hub.ean}")
+        if ean:
+            for p in getattr(hub, "points", []) or []:
+                spd = getattr(p, "supply_point_detail", {}) or {}
+                if spd.get("ean") == ean:
+                    return _address_from_detail(spd)
+        # Fallback
+        data = getattr(hub, "data", None)
+        if data and data.supply_point_detail:
+            return _address_from_detail(data.supply_point_detail)
     except Exception:
-        pass
-    addr = _address_for_ean(getattr(hub, "data", None))
-    if addr:
-        location_parts.append(addr)
-    return "; ".join(location_parts) if location_parts else None
+        return None
+    return None
