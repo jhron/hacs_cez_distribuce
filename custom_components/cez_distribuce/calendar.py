@@ -16,33 +16,28 @@ async def async_setup_platform(hass: HomeAssistant, config, async_add_entities, 
     # Legacy YAML path
     hub: CezHub = hass.data[DOMAIN]["legacy"] if isinstance(hass.data.get(DOMAIN), dict) and "legacy" in hass.data[
         DOMAIN] else hass.data[DOMAIN]
-    # Build per-EAN entities
+    # Build per-EAN entities strictly from hub.points
     entities = []
-    points = getattr(hub, "points", None) or ([hub.data] if getattr(hub, "data", None) else [])
+    points = getattr(hub, "points", []) or []
     for p in points:
         ean = (p.supply_point_detail or {}).get("ean")
         if not ean:
             continue
         entities.append(CezOutageCalendar(hub, ean))
         entities.append(CezCurrentSignalCalendar(hub, ean))
-    # Fallback: if nothing created, add single default entities (for backward compat)
-    if not entities:
-        entities = [CezOutageCalendar(hub, hub.ean), CezCurrentSignalCalendar(hub, hub.ean)]
     async_add_entities(entities)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     hub: CezHub = hass.data[DOMAIN][entry.entry_id]
     entities = []
-    points = getattr(hub, "points", None) or ([hub.data] if getattr(hub, "data", None) else [])
+    points = getattr(hub, "points", []) or []
     for p in points:
         ean = (p.supply_point_detail or {}).get("ean")
         if not ean:
             continue
         entities.append(CezOutageCalendar(hub, ean))
         entities.append(CezCurrentSignalCalendar(hub, ean))
-    if not entities:
-        entities = [CezOutageCalendar(hub, hub.ean), CezCurrentSignalCalendar(hub, hub.ean)]
     async_add_entities(entities)
 
 
@@ -52,7 +47,7 @@ class CezOutageCalendar(CoordinatorEntity, CalendarEntity):
         self._hub = hub
         self._ean = ean
         self._attr_name = "ČEZ Odstávky"
-        self._attr_unique_id = f"{ean}_outages_calendar" if ean else f"{hub.ean}_outages_calendar"
+        self._attr_unique_id = f"{ean}_outages_calendar"
 
     @property
     def event(self) -> Optional[CalendarEvent]:
@@ -63,10 +58,7 @@ class CezOutageCalendar(CoordinatorEntity, CalendarEntity):
     async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[
         CalendarEvent]:
         data = self.coordinator.data or {}
-        if isinstance(data, list):
-            outages: List[Dict[str, Any]] = data
-        else:
-            outages = data.get(self._ean, [])
+        outages: List[Dict[str, Any]] = data.get(self._ean, [])
         events: List[CalendarEvent] = []
         for o in outages:
             try:
@@ -134,15 +126,12 @@ class CezCurrentSignalCalendar(CoordinatorEntity, CalendarEntity):
         self._hub = hub
         self._ean = ean
         self._attr_name = "HDO – aktuální signál"
-        self._attr_unique_id = f"{ean}_current_signal_calendar" if ean else f"{hub.ean}_current_signal_calendar"
+        self._attr_unique_id = f"{ean}_current_signal_calendar"
 
     @property
     def event(self) -> Optional[CalendarEvent]:
         data: Dict[str, Any] = self.coordinator.data or {}
-        if "signals" in data:
-            signals: List[Dict[str, Any]] = data.get("signals", [])
-        else:
-            signals = (data.get(self._ean) or {}).get("signals", [])
+        signals: List[Dict[str, Any]] = (data.get(self._ean) or {}).get("signals", [])
         if not signals:
             return None
         now = dt_util.now()
@@ -196,11 +185,7 @@ class CezCurrentSignalCalendar(CoordinatorEntity, CalendarEntity):
     async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[
         CalendarEvent]:
         data: Dict[str, Any] = self.coordinator.data or {}
-        # Support both legacy single-EAN responses and new map {ean: signals}
-        if "signals" in data:
-            signals: List[Dict[str, Any]] = data.get("signals", [])
-        else:
-            signals = (data.get(self._ean) or {}).get("signals", [])
+        signals: List[Dict[str, Any]] = (data.get(self._ean) or {}).get("signals", [])
         if not signals:
             return []
         tz_ref = start_date.tzinfo or dt.timezone.utc
@@ -309,10 +294,6 @@ def build_location_address(hub: CezHub, ean: Optional[str]) -> Optional[str]:
                 spd = getattr(p, "supply_point_detail", {}) or {}
                 if spd.get("ean") == ean:
                     return _address_from_detail(spd)
-        # Fallback
-        data = getattr(hub, "data", None)
-        if data and data.supply_point_detail:
-            return _address_from_detail(data.supply_point_detail)
     except Exception:
         return None
     return None

@@ -72,9 +72,7 @@ class CezHub:
         self._username = username
         self._password = password
 
-        # Filled after login
-        self.data: Optional[CezData] = None
-        # All supply points for this account (first one is mirrored in self.data for backward compatibility)
+        # All supply points for this account
         self.points: List[CezData] = []
 
         self.signals_coordinator: Optional[DataUpdateCoordinator] = None
@@ -87,8 +85,11 @@ class CezHub:
 
     @property
     def ean(self) -> Optional[str]:
+        """Return EAN of the first supply point if available (may be None)."""
         try:
-            return self.data.supply_point_detail.get("ean") if self.data else None
+            if self.points:
+                return (self.points[0].supply_point_detail or {}).get("ean")
+            return None
         except Exception:
             return None
 
@@ -111,11 +112,8 @@ class CezHub:
                         self.points.append(CezData(header, sp, sp_detail, readings, signals, outages))
                     except Exception as e:
                         _LOGGER.warning("Failed to load supply point %s: %s", sp, e)
-            # Backward compatibility: mirror the first point into self.data
-            if self.points:
-                self.data = self.points[0]
-            else:
-                # Fallback to previous behavior if structure unexpected
+            # If nothing was loaded, attempt to load the first available point as a single entry in self.points
+            if not self.points:
                 sp_block = supply_points["vstelleBlocks"]["blocks"][0]
                 sp = sp_block["vstelles"][0]
                 uid = sp["uid"]
@@ -123,7 +121,7 @@ class CezHub:
                 readings = self._client.get_readings(uid)
                 signals = self._client.get_signals(sp_detail["ean"]) if sp_detail.get("hdo") else {"signals": []}
                 outages = self._client.get_outages(ean=sp_detail["ean"]) or []
-                self.data = CezData(header, sp, sp_detail, readings, signals, outages)
+                self.points.append(CezData(header, sp, sp_detail, readings, signals, outages))
 
         await self.hass.async_add_executor_job(_blocking_login_and_load)
 
@@ -133,7 +131,7 @@ class CezHub:
         async def _update_signals() -> Dict[str, Any]:
             def _blocking():
                 result: Dict[str, Any] = {}
-                points = self.points if self.points else ([self.data] if self.data else [])
+                points = self.points
                 if not points:
                     return result
                 for p in points:
@@ -147,24 +145,13 @@ class CezHub:
                         # Fallback to last known
                         if ean:
                             result[ean] = p.signals
-                # Legacy compatibility: also provide 'signals' for the first point as a flat list
-                try:
-                    first_ean = self.data.supply_point_detail.get("ean") if self.data else None
-                    if first_ean and first_ean in result:
-                        val = result[first_ean]
-                        if isinstance(val, dict):
-                            result["signals"] = val.get("signals", [])
-                        else:
-                            result["signals"] = val
-                except Exception:
-                    pass
                 return result
             return await self.hass.async_add_executor_job(_blocking)
 
         async def _update_outages() -> Dict[str, List[Dict[str, Any]]]:
             def _blocking():
                 result: Dict[str, List[Dict[str, Any]]] = {}
-                points = self.points if self.points else ([self.data] if self.data else [])
+                points = self.points
                 if not points:
                     return result
                 for p in points:
@@ -183,7 +170,7 @@ class CezHub:
         async def _update_readings() -> Dict[str, List[Dict[str, Any]]]:
             def _blocking():
                 result: Dict[str, List[Dict[str, Any]]] = {}
-                points = self.points if self.points else ([self.data] if self.data else [])
+                points = self.points
                 if not points:
                     return result
                 for p in points:
@@ -196,13 +183,6 @@ class CezHub:
                         _LOGGER.warning("Failed refreshing readings for %s: %s", uid, e)
                         if uid:
                             result[uid] = p.readings
-                # Legacy compatibility: also provide a flat 'readings' list for the first supply point
-                try:
-                    first_uid = self.data.supply_point.get("uid") if self.data else None
-                    if first_uid and first_uid in result:
-                        result["readings"] = result[first_uid]
-                except Exception:
-                    pass
                 return result
             return await self.hass.async_add_executor_job(_blocking)
 

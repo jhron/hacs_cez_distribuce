@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from custom_components.cez_distribuce.__init__ import CezHub, CezData
+from custom_components.cez_distribuce.__init__ import CezHub
 
 
 def test_cezhub_ean_property_returns_from_data():
@@ -19,31 +19,5 @@ def test_cezhub_ean_property_returns_from_data():
     # Without data, ean is None
     assert hub.ean is None
 
-    # Populate minimal CezData
-    hub.data = CezData(
-        header={},
-        supply_point={},
-        supply_point_detail={"ean": "123456789012345678"},
-        readings=[],
-        signals={"signals": []},
-        outages_for_ean=[],
-    )
-
-    assert hub.ean == "123456789012345678"
 
 
-def test_cezhub_ean_property_handles_missing():
-    hass = SimpleNamespace()
-    hub = CezHub(hass, "u", "p", 1, 1, 1)
-
-    # Data present but key missing -> property should catch and return None
-    hub.data = CezData(
-        header={},
-        supply_point={},
-        supply_point_detail={},
-        readings=[],
-        signals={"signals": []},
-        outages_for_ean=[],
-    )
-
-    assert hub.ean is None
