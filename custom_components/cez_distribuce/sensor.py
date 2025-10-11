@@ -10,6 +10,21 @@ from . import CezHub
 from .const import DOMAIN
 
 
+def _extract_readings_list(data: Any) -> List[Dict[str, Any]]:
+    """Return a flat list of reading dicts from coordinator data.
+
+    Supports both legacy list form and the new dict form with a legacy
+    compatibility key 'readings' populated by the hub.
+    """
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        val = data.get("readings")
+        if isinstance(val, list):
+            return val
+    return []
+
+
 async def async_setup_platform(hass: HomeAssistant, config, async_add_entities, discovery_info=None):
     # Legacy YAML path
     hub: CezHub = hass.data[DOMAIN]["legacy"] if isinstance(hass.data.get(DOMAIN), dict) and "legacy" in hass.data[DOMAIN] else hass.data[DOMAIN]
@@ -52,20 +67,20 @@ class CezReadingSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> Optional[float]:
-        readings = self.coordinator.data or []
+        readings = _extract_readings_list(self.coordinator.data)
         latest = _latest_reading(readings)
         if not latest:
             return None
         key = "stavVt" if self._kind == "VT" else "stavNt"
         try:
-            val = float(latest.get(key, "0").strip())
+            val = float(str(latest.get(key, "0")).strip())
             return round(val, 3)
         except Exception:
             return None
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        latest = _latest_reading(self.coordinator.data or []) or {}
+        latest = _latest_reading(_extract_readings_list(self.coordinator.data)) or {}
         return {
             "ean": self._hub.ean,
             "serial": latest.get("sernr"),
@@ -80,16 +95,16 @@ class CezTotalSensor(CezReadingSensor):
 
     @property
     def native_value(self) -> Optional[float]:
-        readings = self.coordinator.data or []
+        readings = _extract_readings_list(self.coordinator.data)
         latest = _latest_reading(readings)
         if not latest:
             return None
         try:
-            vt = float(latest.get("stavVt", "0").strip())
+            vt = float(str(latest.get("stavVt", "0")).strip())
         except Exception:
             vt = 0.0
         try:
-            nt = float(latest.get("stavNt", "0").strip())
+            nt = float(str(latest.get("stavNt", "0")).strip())
         except Exception:
             nt = 0.0
         return round(vt + nt, 3)
