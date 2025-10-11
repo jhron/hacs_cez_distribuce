@@ -12,6 +12,11 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - name: HACS validation
-        uses: "hacs/action@main"
+        uses: "hacs/action@22.5.0"
         with:
           category: "integration"
+  validate:
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: home-assistant/actions/hassfest@master
