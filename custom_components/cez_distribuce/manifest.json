@@ -6,8 +6,8 @@
 	],
 	"config_flow": true,
 	"documentation": "https://github.com/konikvranik/hacs_cez_distribuce",
-	"iot_class": "cloud_polling",
 	"integration_type": "hub",
+	"iot_class": "cloud_polling",
 	"issue_tracker": "https://github.com/konikvranik/hacs_cez_distribuce/issues",
 	"loggers": [
 		"custom_components.cez_distribuce"
