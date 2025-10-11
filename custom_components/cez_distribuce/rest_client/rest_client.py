@@ -32,11 +32,6 @@ MUJ_CEZ_APP_NAME = 'CEZDATA.CORP_qycprwso2_cprCAColFe-prod_PRODUCTION'
 
 LOGIN_RETRIES = 2
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(message)s'
-)
-
 
 class AbstractCezRestClient:
     def __init__(self, redirect_url, client_id, username=None, password=None, extra_params=None):
@@ -66,9 +61,9 @@ class AbstractCezRestClient:
             '_eventId': 'submit',
             'geolocation': ''
         })
-        logging.info(log_history(response))
+        logging.debug(log_history(response))
         response = self._session.get(self._authorize_url)
-        logging.info(log_history(response))
+        logging.debug(log_history(response))
 
     def _post(self, session: Session, url, data=None, json=None, **kwargs):
         return self._handle_login(lambda: session.post(url, data=data, json=json, **kwargs))
