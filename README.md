@@ -22,9 +22,9 @@ cez_distribuce:
   username: "VASE_UZIVATELSKE_JMENO"
   password: "VASE_HESLO"
   # volitelně intervaly aktualizace (v minutách):
-  # scan_interval_signals: 360
-  # scan_interval_outages: 360
-  # scan_interval_readings: 1440
+  # scan_interval_signals: 1440
+  # scan_interval_outages: 1440
+  # scan_interval_readings: 5
 
 # Volitelně můžete povolit platformy také přes discovery, integrace je načte automaticky:
 # calendar:
@@ -43,7 +43,7 @@ Po restartu integrace vytvoří:
   - "Poslední stav celkem" (kWh)
 
 Poznámky:
-- Integrace aktuálně pracuje s prvním nalezeným odběrným místem (OM) ve vašem účtu.
+- Pro každé dostupné odběrné místo (OM) s EAN integrace vytvoří samostatné entity (kalendáře a senzory).
 - Nízký tarif je odvozen ze seznamu časů v odpovědi "Signály". Pokud portál HDO pro vaše OM není dostupný, senzor zůstane vypnutý a kalendář bude prázdný.
 - Odstávky se načítají podle EAN vašeho OM.
 
@@ -102,10 +102,10 @@ Integraci přidejte v Nastavení → Zařízení a služby → Přidat integraci
 - Chyba „invalid_auth“ značí chybné údaje.
 - Chyba „cannot_connect“ značí problém s dostupností služby či připojením.
 
-Volitelné intervaly aktualizace lze nastavit až po vytvoření záznamu integrace (v budoucnu mohou být přidány do rozšířeného dialogu). Výchozí hodnoty:
-- signály (HDO): 360 min
-- odstávky: 360 min
-- odečty: 1440 min
+Poznámka k intervalům aktualizace: Při přidání přes UI se nastaví výchozí intervaly a v současné verzi je nelze v UI měnit. Pro vlastní intervaly použijte konfiguraci v configuration.yaml (viz níže). Výchozí hodnoty jsou:
+- signály (HDO): 1440 min
+- odstávky: 1440 min
+- odečty: 5 min
 
 ## Konfigurace v configuration.yaml (alternativa)
 Základní příklad je uveden výše v této stránce. Volitelné klíče pro intervaly:
