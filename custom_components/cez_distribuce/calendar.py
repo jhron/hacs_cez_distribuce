@@ -14,7 +14,8 @@ from .const import DOMAIN
 
 async def async_setup_platform(hass: HomeAssistant, config, async_add_entities, discovery_info=None):
     # Legacy YAML path
-    hub: CezHub = hass.data[DOMAIN]["legacy"] if isinstance(hass.data.get(DOMAIN), dict) and "legacy" in hass.data[DOMAIN] else hass.data[DOMAIN]
+    hub: CezHub = hass.data[DOMAIN]["legacy"] if isinstance(hass.data.get(DOMAIN), dict) and "legacy" in hass.data[
+        DOMAIN] else hass.data[DOMAIN]
     async_add_entities([
         CezTariffCalendar(hub),
         CezOutageCalendar(hub),
@@ -45,7 +46,8 @@ class CezTariffCalendar(CoordinatorEntity, CalendarEntity):
         # The full list of events is provided via async_get_events.
         return None
 
-    async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[CalendarEvent]:
+    async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[
+        CalendarEvent]:
         data: Dict[str, Any] = self.coordinator.data or {}
         signals: List[Dict[str, Any]] = data.get("signals", [])
 
@@ -104,7 +106,9 @@ class CezTariffCalendar(CoordinatorEntity, CalendarEntity):
                 continue
             ev_start = max(sdt, start_date)
             ev_end = min(edt, end_date)
-            events.append(CalendarEvent(summary="Nízký tarif", start=ev_start, end=ev_end))
+            events.append(
+                CalendarEvent(summary="Nízký tarif", start=ev_start, end=ev_end, location=(
+                    build_location(self._hub)), description=""))
 
         return events
 
@@ -122,7 +126,8 @@ class CezOutageCalendar(CoordinatorEntity, CalendarEntity):
         # calendars will still expose events via async_get_events.
         return None
 
-    async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[CalendarEvent]:
+    async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[
+        CalendarEvent]:
         outages: List[Dict[str, Any]] = self.coordinator.data or []
         events: List[CalendarEvent] = []
         for o in outages:
@@ -157,10 +162,28 @@ class CezOutageCalendar(CoordinatorEntity, CalendarEntity):
                 continue
             number = o.get("number", "")
             summary = f"Odstávka {number}" if number else "Odstávka"
-            desc = []
             for p in (o.get("sortedParts") or o.get("parts") or []):
-                desc.append(p.get("description", ""))
-            events.append(CalendarEvent(summary=summary, start=start_dt, end=end_dt, description="; ".join(desc)))
+                desc = []
+                main_location = p.get("description", "")
+                for s in (p.get('sortedStreets') or p.get('streets') or [{'streetNumbers': {'': ''}}]):
+                    street_name = s.get('streetName', '')
+                    for n in s.get('streetNumbers', [{'': ''}]):
+                        street_number = ''
+                        if n.get('buildingId') or n.get('streetId'):
+                            street_number = n.get('buildingId') + '/' + n.get('streetId')
+                        if n.get('cadastralTerritoryCode') or n.get('parcelaId'):
+                            street_number += ' ('
+                            if n.get('cadastralTerritoryCode'):
+                                street_number += 'k.ú ' + n.get('cadastralTerritoryCode')
+                            if n.get('cadastralTerritoryCode') and n.get('parcelaId'):
+                                street_number += ', '
+                            if n.get('parcelaId'):
+                                street_number += 'parc. č. ' + n.get('parcelaId')
+                            street_number += ')'
+                        desc.append(main_location + ', ' + street_name + ' ' + street_number)
+                events.append(
+                    CalendarEvent(summary=summary+' - '+main_location, start=start_dt, end=end_dt, description=";\n".join(desc),
+                                  location=main_location))
         return events
 
 
@@ -195,12 +218,12 @@ class CezCurrentSignalCalendar(CoordinatorEntity, CalendarEntity):
                 continue
             casy = s.get("casy", "")
             name = (
-                s.get("nazevSignalu")
-                or s.get("nazev")
-                or s.get("signal")
-                or s.get("name")
-                or s.get("oznaceni")
-                or "HDO signál"
+                    s.get("nazevSignalu")
+                    or s.get("nazev")
+                    or s.get("signal")
+                    or s.get("name")
+                    or s.get("oznaceni")
+                    or "HDO signál"
             )
             for part in [p.strip() for p in casy.split(";") if p.strip()]:
                 try:
@@ -220,10 +243,12 @@ class CezCurrentSignalCalendar(CoordinatorEntity, CalendarEntity):
                 if edt <= sdt:
                     edt = edt + dt.timedelta(days=1)
                 if sdt <= now <= edt:
-                    return CalendarEvent(summary=f"Signál {name}", start=sdt, end=edt)
+                    return CalendarEvent(summary=f"Signál {name}", start=sdt, end=edt, location=(
+                        build_location(self._hub)))
         return None
 
-    async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[CalendarEvent]:
+    async def async_get_events(self, hass: HomeAssistant, start_date: dt.datetime, end_date: dt.datetime) -> List[
+        CalendarEvent]:
         data: Dict[str, Any] = self.coordinator.data or {}
         signals: List[Dict[str, Any]] = data.get("signals", [])
         if not signals:
@@ -243,12 +268,12 @@ class CezCurrentSignalCalendar(CoordinatorEntity, CalendarEntity):
                 continue
             casy = s.get("casy", "")
             name = (
-                s.get("nazevSignalu")
-                or s.get("nazev")
-                or s.get("signal")
-                or s.get("name")
-                or s.get("oznaceni")
-                or "HDO signál"
+                    s.get("nazevSignalu")
+                    or s.get("nazev")
+                    or s.get("signal")
+                    or s.get("name")
+                    or s.get("oznaceni")
+                    or "HDO signál"
             )
             for part in [p.strip() for p in casy.split(";") if p.strip()]:
                 try:
@@ -290,3 +315,36 @@ class CezCurrentSignalCalendar(CoordinatorEntity, CalendarEntity):
                 ev_end = min(edt, end_date)
                 events.append(CalendarEvent(summary=f"Signál {name}", start=ev_start, end=ev_end))
         return events
+
+
+def _address_for_ean(data) -> Optional[str]:
+    """Best-effort formatter of supply point address for the current EAN.
+
+    We try several common keys observed in ČEZ responses. If nothing sensible
+    is found, returns None. The function is defensive to avoid breaking the
+    calendar when data are missing or the schema changes.
+    """
+    try:
+        if not data:
+            return None
+        spd = data.supply_point_detail or {}
+        addr_node = spd['adresa']
+        if not addr_node:
+            return None
+        return addr_node['adresaComplete']
+    except Exception:
+        return None
+
+
+def build_location(hub) -> str | None:
+    # Build location text including EAN and address if available
+    location_parts: List[str] = []
+    try:
+        if hub.ean:
+            location_parts.append(f"EAN {hub.ean}")
+    except Exception:
+        pass
+    addr = _address_for_ean(getattr(hub, "data", None))
+    if addr:
+        location_parts.append(addr)
+    return "; ".join(location_parts) if location_parts else None

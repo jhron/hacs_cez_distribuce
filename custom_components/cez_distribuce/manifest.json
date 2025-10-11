@@ -1,6 +1,7 @@
 {
 	"domain": "cez_distribuce",
 	"name": "ČEZ Distribuce",
+	"version": "0.1.0",
 	"documentation": "https://github.com/konikvranik/hacs_cez_distribuce",
 	"codeowners": [
 		"@konikvranik"

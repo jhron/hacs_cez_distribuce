@@ -132,5 +132,6 @@ def is_array(value) -> bool:
 def log_history(response: Response):
     result = ''
     for resp in response.history:
-        result += (f'{resp.status_code} {resp.is_redirect} {resp.headers} {resp.url}\n')
+        result += (f'\n{resp.status_code} {resp.is_redirect} {resp.headers} {resp.url}')
+    result += (f'\n{response.status_code} {response.is_redirect} {response.headers} {response.url}')
     return result
