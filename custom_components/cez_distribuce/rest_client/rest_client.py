@@ -46,8 +46,8 @@ class AbstractCezRestClient:
         self._username = username
         self._password = password
         if extra_params:
-            self._login_url += '&' + urllib.parse.urlencode(extra_params)
-            self._authorize_url += '&' + urllib.parse.urlencode(extra_params)
+            self._login_url += f'&{urllib.parse.urlencode(extra_params)}'
+            self._authorize_url += f'&{urllib.parse.urlencode(extra_params)}'
         self._session = requests.Session()
         self._session.max_redirects = 10
         self._anonymous_session = requests.Session()
@@ -99,32 +99,32 @@ class CezDistribuceRestClient(AbstractCezRestClient):
 
     def refresh_api_token(self):
         # Hledání X-Request-Tokenu v těle finální stránky
-        api_token = self._get(self._session, self._base_url + '/rest-auth-api?path=/token/get')
+        api_token = self._get(self._session, f'{self._base_url}/rest-auth-api?path=/token/get')
         self._session.headers.update({'X-Request-Token': api_token})
 
     def refresh_anon_api_token(self):
         # Hledání X-Request-Tokenu v těle finální stránky
-        api_token = self._get(self._anonymous_session, self._base_url + '/anonymous/rest-auth-api?path=/token/get')
+        api_token = self._get(self._anonymous_session, f'{self._base_url}/anonymous/rest-auth-api?path=/token/get')
         self._anonymous_session.headers.update({'X-Request-Token': api_token})
 
     def common_header(self):
-        return self._get(self._session, self._base_url + '/common-api?path=/common/header')
+        return self._get(self._session, f'{self._base_url}/common-api?path=/common/header')
 
     def get_supply_points(self):
         return self._post(self._session,
-                          self._base_url + '/vyhledani-om?path=/vyhledaniom/zakladniInfo/50/PREHLED_OM_CELEK',
+                          f'{self._base_url}/vyhledani-om?path=/vyhledaniom/zakladniInfo/50/PREHLED_OM_CELEK',
                           json={"nekontrolovatPrislusnostOM": False})
 
     def get_supply_point_detail(self, uid):
-        return self._get(self._session, self._base_url + '/prehled-om?path=supply-point-detail/' + uid)
+        return self._get(self._session, f'{self._base_url}/prehled-om?path=supply-point-detail/{uid}')
 
     def get_readings(self, uid):
         return self._post(self._session,
-                          self._base_url + '/prehled-om?path=supply-point-detail/meter-reading-history/' + uid + '/false',
+                          f'{self._base_url}/prehled-om?path=supply-point-detail/meter-reading-history/{uid}/false',
                           json={})
 
     def get_signals(self, ean):
-        return self._get(self._session, self._base_url + '/prehled-om?path=supply-point-detail/signals/' + ean)
+        return self._get(self._session, f'{self._base_url}/prehled-om?path=supply-point-detail/signals/{ean}')
 
     def get_outages(self, ean=None, meterNumber=None, psc=None, mesto=None, ulice=None):
         if (ean):
@@ -136,7 +136,7 @@ class CezDistribuceRestClient(AbstractCezRestClient):
         else:
             raise ValueError("Either ean, meterNumber or psc and mesto must be provided")
         return self._post(self._anonymous_session,
-                          self._base_url + '/anonymous/vyhledani-odstavek?path=shutdown-search',
+                          f'{self._base_url}/anonymous/vyhledani-odstavek?path=shutdown-search',
                           json=payload)
 
     def _get(self, session, url, **kwargs):
