@@ -39,7 +39,7 @@ from .rest_client.rest_client import CezDistribuceRestClient
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["calendar", "sensor"]
+PLATFORMS = ["calendar", "sensor", "binary_sensor"]
 
 DOMAIN_SCHEMA = vol.Schema(
     {

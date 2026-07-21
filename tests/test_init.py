@@ -27,7 +27,35 @@ SUPPLY_POINTS_PAYLOAD = {
         ]
     }
 }
-DETAIL_PAYLOAD = {"ean": "8591824000000011", "hdo": True}
+DETAIL_PAYLOAD = {
+    "ean": "8591824000000011",
+    "hdo": True,
+    "probihajiciOdstavka": False,
+    "stavSmlouvyDistribuce": "AKTIV",
+    "stavSmlouvyDistribuceTxt": "Aktivní",
+    "anlage_Dist": {
+        "tydenOdectu": 23,
+        "tydenOdectuFormatted": "23 (01.06.2026 - 07.06.2026)",
+        "cislo": "0004381597",
+        "sazba": "D57D",
+        "distributor": "CEZ-DI",
+        "distributorTxt": "ČEZ Distribuce",
+        "mesicOdectu": 0,
+    },
+    "faktaOM": {
+        "napetovaHladina": "NN",
+        "typMereni": "C",
+        "jisticCharakteristika": "B",
+        "datumPoslednihoOdectu": "2025-01-01T00:00:00",
+        # casoveRezy intentionally unsorted (D57D is newer but listed first).
+        "casoveRezy": [
+            {"sazbaDistribuce": "D57D", "sazbaDistribuceOd": "2019-05-27T00:00:00",
+             "hlavniJistic": 40.0, "pocetFazi": 3.0, "typMereni": "C", "typOdberu": "T"},
+            {"sazbaDistribuce": "D25D", "sazbaDistribuceOd": "2008-09-26T00:00:00",
+             "hlavniJistic": 25.0, "pocetFazi": 3.0, "typMereni": "C", "typOdberu": "T"},
+        ],
+    },
+}
 READINGS_PAYLOAD = [{"datumOdectu": "2025-01-01", "stavVt": 100.0, "stavNt": 50.0, "sernr": "S1"}]
 SIGNALS_PAYLOAD = {"signals": [{"datum": "01.01.2025", "casy": "00:00 - 08:00", "nazevSignalu": "NT"}]}
 OUTAGES_PAYLOAD = []
@@ -105,10 +133,12 @@ async def test_setup_entry_loads_and_sets_up_platforms(
 async def test_setup_entry_creates_expected_entities(
     hass: HomeAssistant, enable_custom_integrations, mock_client
 ):
-    """The calendar and sensor platforms should expose the right entities.
+    """All three platforms should expose the right entities.
 
     Entity IDs derive from the Czech display names, so we assert on substrings
     rather than exact ids to stay robust to HA's slug normalization.
+
+    Per supply point we expect: 2 calendars + 5 sensors + 2 binary sensors.
     """
     await _add_loaded_entry(hass)
 
@@ -116,22 +146,93 @@ async def test_setup_entry_creates_expected_entities(
     # 2 calendars (outage + current signal)
     calendar_ids = [eid for eid in entity_ids if eid.startswith("calendar.")]
     sensor_ids = [eid for eid in entity_ids if eid.startswith("sensor.")]
+    binary_ids = [eid for eid in entity_ids if eid.startswith("binary_sensor.")]
     assert any("odstavky" in eid for eid in calendar_ids), calendar_ids
     assert any("hdo" in eid and "signal" in eid for eid in calendar_ids), calendar_ids
-    # 3 sensors (VT, NT, total) for the one supply point
+
+    # Reading sensors (VT, NT, total)
     vt_ids = [eid for eid in sensor_ids if "vt" in eid]
     nt_ids = [eid for eid in sensor_ids if "nt" in eid and "celkem" not in eid]
     total_ids = [eid for eid in sensor_ids if "celkem" in eid]
     assert vt_ids and nt_ids and total_ids, sensor_ids
 
-    # Sensors should also carry the right numeric values from READINGS_PAYLOAD
-    # (stavVt=100, stavNt=50 -> total=150).
+    # New detail-derived sensors. HA slugifies "Týden odečtu" -> tyden_odectu.
+    week_ids = [eid for eid in sensor_ids if "odec" in eid]
+    tariff_ids = [eid for eid in sensor_ids if "sazba" in eid or "tariff" in eid]
+    assert week_ids, sensor_ids
+    assert tariff_ids, sensor_ids
+
+    # New binary sensors
+    assert any("odstavka" in eid for eid in binary_ids), binary_ids
+    assert any("smlouva" in eid for eid in binary_ids), binary_ids
+
+    # Reading sensor numeric values from READINGS_PAYLOAD (VT=100, NT=50 -> 150).
     vt_state = hass.states.get(vt_ids[0])
     nt_state = hass.states.get(nt_ids[0])
     total_state = hass.states.get(total_ids[0])
     assert vt_state is not None and float(vt_state.state) == 100.0
     assert nt_state is not None and float(nt_state.state) == 50.0
     assert total_state is not None and float(total_state.state) == 150.0
+
+
+async def test_setup_entry_week_reading_sensor_value(
+    hass: HomeAssistant, enable_custom_integrations, mock_client
+):
+    """The week-of-reading sensor reflects anlage_Dist.tydenOdectu."""
+    await _add_loaded_entry(hass)
+    sensor_ids = [eid for eid in hass.states.async_entity_ids() if eid.startswith("sensor.") and "odec" in eid]
+    assert sensor_ids
+    state = hass.states.get(sensor_ids[0])
+    assert state is not None
+    assert int(state.state) == 23  # DETAIL_PAYLOAD.anlage_Dist.tydenOdectu
+    attrs = state.attributes
+    assert attrs.get("interval") == "23 (01.06.2026 - 07.06.2026)"
+    assert attrs.get("sazba") == "D57D"
+
+
+async def test_setup_entry_tariff_sensor_value(
+    hass: HomeAssistant, enable_custom_integrations, mock_client
+):
+    """The tariff sensor picks the current (newest) tariff slice."""
+    await _add_loaded_entry(hass)
+    sensor_ids = [
+        eid for eid in hass.states.async_entity_ids()
+        if eid.startswith("sensor.") and ("sazba" in eid or "tariff" in eid)
+    ]
+    assert sensor_ids
+    state = hass.states.get(sensor_ids[0])
+    assert state is not None
+    assert state.state == "D57D"  # current tariff (D25D is older)
+    # hlavni_jistic comes through as int 40, not float 40.0
+    assert state.attributes.get("hlavni_jistic") == 40
+    assert state.attributes.get("pocet_fazi") == 3
+
+
+async def test_setup_entry_outage_binary_sensor_off(
+    hass: HomeAssistant, enable_custom_integrations, mock_client
+):
+    """The outage-in-progress binary sensor is off when no outage is active."""
+    await _add_loaded_entry(hass)
+    ids = [eid for eid in hass.states.async_entity_ids()
+           if eid.startswith("binary_sensor.") and "odstavka" in eid]
+    assert ids
+    state = hass.states.get(ids[0])
+    assert state is not None
+    assert state.state == "off"
+
+
+async def test_setup_entry_contract_binary_sensor_on(
+    hass: HomeAssistant, enable_custom_integrations, mock_client
+):
+    """The contract-active binary sensor is on when stavSmlouvyDistribuce == AKTIV."""
+    await _add_loaded_entry(hass)
+    ids = [eid for eid in hass.states.async_entity_ids()
+           if eid.startswith("binary_sensor.") and "smlouva" in eid]
+    assert ids
+    state = hass.states.get(ids[0])
+    assert state is not None
+    assert state.state == "on"
+    assert state.attributes.get("stav_text") == "Aktivní"
 
 
 async def test_unload_entry_removes_hub_data(

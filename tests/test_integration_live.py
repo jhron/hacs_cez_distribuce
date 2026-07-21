@@ -150,6 +150,50 @@ def test_get_supply_point_detail_has_ean(first_supply_point):
     assert ean, f"no ean in detail for uid={uid}"
 
 
+def test_detail_carries_fields_for_new_entities(first_supply_point):
+    """The detail must expose the fields the new HA entities read.
+
+    Guards against silent regressions if the portal renames any of:
+    probihajiciOdstavka, stavSmlouvyDistribuce(+Txt), anlage_Dist.tydenOdectu,
+    faktaOM.casoveRezy. Each is the data source for a sensor/binary_sensor.
+    """
+    uid, detail, ean = first_supply_point
+
+    # binary_sensor.cez_odstavka_prubezi
+    assert "probihajiciOdstavka" in detail, "missing probihajiciOdstavka"
+    assert isinstance(detail["probihajiciOdstavka"], bool)
+
+    # binary_sensor.cez_smlouva_aktivni
+    assert "stavSmlouvyDistribuce" in detail, "missing stavSmlouvyDistribuce"
+    assert isinstance(detail["stavSmlouvyDistribuce"], str)
+    assert "stavSmlouvyDistribuceTxt" in detail
+
+    # sensor.cez_tydenni_odecet
+    anlage = detail.get("anlage_Dist") or {}
+    assert isinstance(anlage.get("tydenOdectu"), int), "missing anlage_Dist.tydenOdectu (int)"
+    assert isinstance(anlage.get("tydenOdectuFormatted"), str)
+
+    # sensor.cez_sazba_distribuce
+    fakta = detail.get("faktaOM") or {}
+    slices = fakta.get("casoveRezy")
+    assert isinstance(slices, list) and slices, "missing faktaOM.casoveRezy list"
+    # Each slice must carry the keys the tariff sensor reads
+    for s in slices:
+        assert "sazbaDistribuce" in s
+        assert "sazbaDistribuceOd" in s
+    # faktaOM bonus attributes
+    assert "napetovaHladina" in fakta
+
+    _dump("new-entity fields check", {
+        "probihajiciOdstavka": detail["probihajiciOdstavka"],
+        "stavSmlouvyDistribuce": detail["stavSmlouvyDistribuce"],
+        "tydenOdectu": anlage.get("tydenOdectu"),
+        "tydenOdectuFormatted": anlage.get("tydenOdectuFormatted"),
+        "casoveRezy_count": len(slices),
+        "tariff_codes": [s.get("sazbaDistribuce") for s in slices],
+    })
+
+
 def test_get_readings_returns_list(first_supply_point, client):
     """get_readings must return a list (possibly empty)."""
     uid, detail, ean = first_supply_point

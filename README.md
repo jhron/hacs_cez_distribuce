@@ -45,11 +45,17 @@ Po restartu integrace vytvoří:
   - "Poslední stav VT" (kWh)
   - "Poslední stav NT" (kWh)
   - "Poslední stav celkem" (kWh)
+  - "Týden odečtu" – číslo týdne plánovaného odečtu (atributy: interval, sazba, distributor)
+  - "Sazba distribuce" – aktuální sazba (např. `D57D`), atributy: hlavní jistič (A), počet fází, napěťová hladina
+- Binární senzory:
+  - "ČEZ Odstávka právě probíhá" – `on`, pokud právě teď běží odstávka (doplnění kalendáře plánovaných odstávek)
+  - "ČEZ Smlouva aktivní" – `on`, pokud je distribuční smlouva ve stavu AKTIV
 
 Poznámky:
-- Pro každé dostupné odběrné místo (OM) s EAN integrace vytvoří samostatné entity (kalendáře a senzory).
+- Pro každé dostupné odběrné místo (OM) s EAN integrace vytvoří samostatné entity (kalendáře, senzory i binární senzory).
 - Nízký tarif je odvozen ze seznamu časů v odpovědi "Signály". Pokud portál HDO pro vaše OM není dostupný, senzor zůstane vypnutý a kalendář bude prázdný.
 - Odstávky se načítají podle EAN vašeho OM.
+- Senzory "Týden odečtu", "Sazba distribuce" a binární senzory čerpají data z detailu odběrného místa, který se načítá jednou při startu. Restartujte Home Assistant (nebo znovu načtěte integraci), aby se tyto hodnoty aktualizovaly — na rozdíl od odečtů a HDO se nemění průběžně.
 
 ## 🧩 Konfigurace přes UI (Config Flow)
 
@@ -164,11 +170,22 @@ Základní příklad je uveden výše v této stránce. Volitelné klíče pro i
   - Naplánované odstávky dle EAN vašeho OM.
 - Senzory odečtů:
   - Poslední stav VT (kWh), Poslední stav NT (kWh), Poslední stav celkem (kWh).
+  - Atributy: `serial` (sériové číslo elektroměru), `date` (datum odečtu), `reason` (důvod), `datum_posledniho_odectu`.
+- „Týden odečtu“
+  - Stav = číslo týdne plánovaného odečtu distribucí. Atributy: `interval` (např. `23 (01.06.2026 - 07.06.2026)`), `sazba`, `distributor`, `cislo_smlouvy`.
+  - Užitečné pro automatizaci „připomenout odečet“ v daném týdnu.
+- „Sazba distribuce“
+  - Stav = aktuální distribuční sazba (např. `D57D`). Atributy: `hlavni_jistic` (A), `pocet_fazi`, `typ_mereni`, `typ_odberu`, `platnost_od`, `napetova_hladina`, `jistic_charakteristika`.
+  - Užitečné při plánování instalace (EV, přímotopy, fotovoltaika) — ukazuje rezervu jističe.
+- Binární senzory:
+  - „ČEZ Odstávka právě probíhá“ (`device_class: problem`) – `on`, pokud `probihajiciOdstavka`. Komplement kalendáře (ten ukazuje budoucnost, tento senzor reálný stav „teď“).
+  - „ČEZ Smlouva aktivní“ – `on`, pokud `stavSmlouvyDistribuce == "AKTIV"`. Atribut `stav_text` (např. „Aktivní“).
 
 Poznámky a omezení:
-- Pro každé dostupné odběrné místo (OM) s EAN integrace vytvoří samostatné kalendáře a senzory. Pokud OM nemá dostupný EAN, může být přeskočeno.
+- Pro každé dostupné odběrné místo (OM) s EAN integrace vytvoří samostatné kalendáře, senzory i binární senzory. Pokud OM nemá dostupný EAN, může být přeskočeno.
 - Pokud pro OM nejsou dostupné HDO signály, kalendář HDO bude prázdný.
 - V případě dočasného výpadku portálu se integrace snaží použít poslední známá data.
+- Senzory „Týden odečtu“, „Sazba distribuce“ a oba binární senzory se neaktualizují průběžně (čerpají z detailu OM načteného při startu). Pro obnovu restartujte HA nebo znovu načtěte integraci.
 
 ## 💡 Příklady použití
 
