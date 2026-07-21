@@ -1,0 +1,18 @@
+# Test dependencies for the ČEZ Distribuce HA integration.
+#
+# Install with:
+#   python -m pip install -r requirements_test.txt
+#
+# Runtime deps (homeassistant, beautifulsoup4, requests) are declared in
+# custom_components/cez_distribuce/manifest.json and are expected to already
+# be present in the environment.
+
+# pytest-homeassistant-custom-component pins an exact HA version and provides
+# the fixtures an HA custom integration is expected to test against:
+# `hass`, `enable_custom_integrations`, `hass_storage`, snapshot support, etc.
+# Keep its version aligned with the HA core version you test against.
+pytest-homeassistant-custom-component==0.13.346  # requires homeassistant==2026.7.2
+
+# HTTP mocking for offline REST-client tests (mocks requests.Session calls,
+# including the CAS login redirect chain and JSON envelope responses).
+requests-mock>=1.12

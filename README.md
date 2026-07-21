@@ -59,14 +59,54 @@ Integraci lze přidat také přes Nastavení → Zařízení a služby → Přid
 
 ## ✅ Testy
 
-Repozitář obsahuje základní jednotkové testy pro pomocné funkce REST klienta. Testy spustíte lokálně takto:
+Repozitář obsahuje tři vrstvy testů:
 
-- nainstalujte závislosti pro testování (pytest):
-  - python -m pip install -U pytest
-- spusťte testy v kořenovém adresáři repozitáře:
-  - pytest -q
+1. **Offline unit testy** (`tests/test_rest_client.py`, `tests/test_calendar.py`, `tests/test_cezhub.py`) – testují parsování odpovědí, retry/logiku REST klienta a vlastnosti entit. Používají `requests_mock`, nikdy nevolají reálný portál.
+2. **HA-style testy** (`tests/test_config_flow.py`, `tests/test_init.py`) – běží proti reálné instanci Home Assistanta přes `pytest-homeassistant-custom-component` (config flow, setup/unload entry, vytváření entit). Klient je mockovaný.
+3. **Integrační testy** (`tests/test_integration_live.py`, označené `@pytest.mark.integration`) – volají skutečné metody proti portálu ČEZ Distribuce. **Vyžadují** přihlašovací údaje; bez nich se automaticky přeskočí (skip), takže sada zůstává zelená i v CI bez secrets. Údaje se načítají v tomto pořadí:
+   - env proměnné `CEZ_USERNAME` a `CEZ_PASSWORD` (mají přednost – vhodné pro CI),
+   - nebo soubor `.env.local` v kořeni repozitáře (je v `.gitignore`, bezpečné pro lokální vývoj).
 
-> Pozn.: Testy nevyžadují přímé připojení k portálu a neprovádějí žádné reálné přihlášení.
+### Instalace závislostí
+
+```bash
+python -m pip install -r requirements_test.txt
+```
+
+> Pozn.: `requirements_test.txt` instaluje `pytest-homeassistant-custom-component==0.13.346`, což je pinovaný na `homeassistant==2026.7.2`. Při upgrade HA je třeba zvolit odpovídající verzi tohoto balíčku.
+
+### Přihlašovací údaje pro integrační testy
+
+Založte v kořeni repozitáře soubor `.env.local` (je v `.gitignore`, nikdy se necommitne):
+
+```
+CEZ_USERNAME=vas@email.cz
+CEZ_PASSWORD=vaso-heslo
+```
+
+> ⚠️ **Portál ČEZ nyní vyžaduje e-mail jako přihlašovací jméno.** `CEZ_USERNAME` proto musí být plný e-mail (např. `petr@vranik.name`), nikoli staré uživatelské jméno. Jinak přihlášení selže s chybou *invalid credentials*.
+
+Případně údaje předejte přes env proměnné (mají přednost před `.env.local`):
+
+```bash
+export CEZ_USERNAME=vas@email.cz
+export CEZ_PASSWORD=vaso-heslo
+```
+
+### Spuštění
+
+```bash
+# pouze offline testy (výchozí pro CI):
+pytest -q -m "not integration"
+
+# kompletní sada (integration se skipne bez údajů):
+pytest -q
+
+# integrační testy proti reálnému portálu (vypíše strukturu odpovědí):
+pytest -q -m integration -s
+```
+
+> Pozn.: Offline a HA-style testy neprovádějí žádné reálné přihlášení. Integrační testy zasahují na reálný portál ČEZ Distribuce – spouštějte je jen s vlastním účtem a na vlastní zodpovědnost.
 
 
 ## 📚 Přehled projektu
@@ -193,7 +233,7 @@ logger:
 - Integrace neodesílá data třetím stranám mimo ČEZ Distribuce.
 
 ## 🧑‍💻 Vývoj a přispívání
-- Testy spustíte lokálně pomocí `pytest -q` (viz kapitola Testy výše).
+- Testy spustíte lokálně pomocí `pytest -q` (viz kapitola Testy výše). Pro CI stačí `pytest -q -m "not integration"`.
 - Pull Requesty s vylepšeními a opravami jsou vítány. Prosíme o stručný popis změn a doplnění testů, pokud je to možné.
 
 ## 🐛 Nahlášení chyb a návrhy

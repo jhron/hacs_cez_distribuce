@@ -95,20 +95,27 @@ class CezOutageCalendar(CoordinatorEntity, CalendarEntity):
             for p in (o.get("sortedParts") or o.get("parts") or []):
                 desc = []
                 main_location = p.get("description", "")
-                for s in (p.get('sortedStreets') or p.get('streets') or [{'streetNumbers': {'': ''}}]):
-                    street_name = s.get('streetName', '')
-                    for n in s.get('streetNumbers', [{'': ''}]):
+                for s in (p.get('sortedStreets') or p.get('streets') or [{}]):
+                    street_name = s.get('streetName', '') if isinstance(s, dict) else ''
+                    for n in s.get('streetNumbers', [{}]) if isinstance(s, dict) else [{}]:
                         street_number = ''
-                        if n.get('buildingId') or n.get('streetId'):
-                            street_number = n.get('buildingId') + '/' + n.get('streetId')
-                        if n.get('cadastralTerritoryCode') or n.get('parcelaId'):
+                        if not isinstance(n, dict):
+                            desc.append(main_location + ', ' + street_name + ' ' + street_number)
+                            continue
+                        building_id = n.get('buildingId')
+                        street_id = n.get('streetId')
+                        if building_id or street_id:
+                            street_number = f"{building_id or ''}/{street_id or ''}"
+                        cadastral = n.get('cadastralTerritoryCode')
+                        parcela = n.get('parcelaId')
+                        if cadastral or parcela:
                             street_number += ' ('
-                            if n.get('cadastralTerritoryCode'):
-                                street_number += 'k.ú ' + n.get('cadastralTerritoryCode')
-                            if n.get('cadastralTerritoryCode') and n.get('parcelaId'):
+                            if cadastral:
+                                street_number += 'k.ú ' + cadastral
+                            if cadastral and parcela:
                                 street_number += ', '
-                            if n.get('parcelaId'):
-                                street_number += 'parc. č. ' + n.get('parcelaId')
+                            if parcela:
+                                street_number += 'parc. č. ' + parcela
                             street_number += ')'
                         desc.append(main_location + ', ' + street_name + ' ' + street_number)
                 events.append(
