@@ -36,6 +36,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_SIGNALS_MIN,
 )
 from .rest_client.rest_client import CezDistribuceRestClient
+from .statistics import async_import_readings_statistics
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -128,6 +129,12 @@ class CezHub:
     async def async_setup(self) -> None:
         await self._login_and_load_static()
 
+        # Import historical statistics for initially loaded readings
+        for p in self.points:
+            ean = (p.supply_point_detail or {}).get("ean") or (p.supply_point or {}).get("ean")
+            if ean and p.readings:
+                async_import_readings_statistics(self.hass, ean, p.readings)
+
         async def _update_signals() -> Dict[str, Any]:
             def _blocking():
                 result: Dict[str, Any] = {}
@@ -184,7 +191,14 @@ class CezHub:
                         if uid:
                             result[uid] = p.readings
                 return result
-            return await self.hass.async_add_executor_job(_blocking)
+
+            readings_map = await self.hass.async_add_executor_job(_blocking)
+            for p in self.points:
+                uid = (p.supply_point or {}).get("uid")
+                ean = (p.supply_point_detail or {}).get("ean") or (p.supply_point or {}).get("ean")
+                if uid and ean and uid in readings_map:
+                    async_import_readings_statistics(self.hass, ean, readings_map[uid])
+            return readings_map
 
         self.signals_coordinator = DataUpdateCoordinator(
             self.hass,

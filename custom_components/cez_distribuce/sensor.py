@@ -91,7 +91,9 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
 class CezReadingSensor(CoordinatorEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    # state_class is intentionally omitted so HA does not generate real-time
+    # statistics on delayed meter readings. Long-term statistics are imported
+    # via async_add_external_statistics with the actual reading date.
 
     def __init__(self, hub: CezHub, uid: str, ean: Optional[str], kind: str, name: str, unique_suffix: str) -> None:
         super().__init__(hub.readings_coordinator)
