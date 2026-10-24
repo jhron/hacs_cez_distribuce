@@ -81,6 +81,9 @@ class CezHub:
         self.outages_coordinator: Optional[DataUpdateCoordinator] = None
         self.readings_coordinator: Optional[DataUpdateCoordinator] = None
 
+        # EAN -> time of the last successful HDO schedule download
+        self.signals_updated: Dict[str, dt.datetime] = {}
+
         self._scan_signals = dt.timedelta(minutes=scan_signals_min)
         self._scan_outages = dt.timedelta(minutes=scan_outages_min)
         self._scan_readings = dt.timedelta(minutes=scan_readings_min)
@@ -147,10 +150,11 @@ class CezHub:
                         ean = p.supply_point_detail.get("ean")
                         if not ean or not p.supply_point_detail.get("hdo"):
                             continue
-                        result[ean] = self._client.get_signals(ean)
+                        p.signals = result[ean] = self._client.get_signals(ean)
+                        self.signals_updated[ean] = dt.datetime.now(dt.timezone.utc)
                     except Exception as e:
                         _LOGGER.warning("Failed refreshing signals for %s: %s", getattr(p.supply_point_detail, 'ean', '?'), e)
-                        # Fallback to last known
+                        # Fallback to last known good schedule
                         if ean:
                             result[ean] = p.signals
                 return result

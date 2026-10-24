@@ -283,3 +283,44 @@ async def test_yaml_setup_loads_hub_and_creates_entities(
     hub: CezHub = hass.data[DOMAIN]["legacy"]
     assert hub.signals_coordinator.data == {"8591824000000011": SIGNALS_PAYLOAD}
     assert any(s.entity_id.startswith("calendar.") for s in hass.states.async_all())
+
+
+def _schedule_state(hass: HomeAssistant):
+    """The "HDO – rozpis" sensor: raw 7-day schedule + time of the last good download."""
+    states = [s for s in hass.states.async_all("sensor") if "signals" in s.attributes]
+    assert len(states) == 1, "expected exactly one HDO schedule sensor"
+    return states[0]
+
+
+async def test_schedule_sensor_exposes_raw_signals_and_download_time(
+    hass: HomeAssistant, enable_custom_integrations, mock_client
+):
+    await _add_loaded_entry(hass)
+
+    state = _schedule_state(hass)
+    assert state.attributes["signals"] == SIGNALS_PAYLOAD["signals"]
+    assert state.attributes["device_class"] == "timestamp"
+    assert state.state not in ("unknown", "unavailable")
+
+
+async def test_schedule_sensor_keeps_last_good_schedule_when_refresh_fails(
+    hass: HomeAssistant, enable_custom_integrations, mock_client, freezer
+):
+    entry = await _add_loaded_entry(hass)
+    hub: CezHub = hass.data[DOMAIN][entry.entry_id]
+    newer = {"signals": [{"datum": "02.01.2025", "casy": "00:00 - 06:00", "nazevSignalu": "NT"}]}
+
+    freezer.tick(3600)
+    mock_client.get_signals.return_value = newer
+    await hub.signals_coordinator.async_refresh()
+    await hass.async_block_till_done()
+    good = _schedule_state(hass)
+    assert good.attributes["signals"] == newer["signals"]
+
+    freezer.tick(3600)
+    mock_client.get_signals.side_effect = Exception("session expired")
+    await hub.signals_coordinator.async_refresh()
+    await hass.async_block_till_done()
+    after_failure = _schedule_state(hass)
+    assert after_failure.attributes["signals"] == newer["signals"]
+    assert after_failure.state == good.state
