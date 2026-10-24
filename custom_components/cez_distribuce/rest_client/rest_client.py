@@ -57,6 +57,9 @@ class AbstractCezRestClient:
             self._username = username
         if password:
             self._password = password
+        # Čisté přihlášení jako po restartu: cookies prošlé session by CAS
+        # mohly přesměrovat mimo formulář s polem 'execution'.
+        self._session.cookies.clear()
         response = self._session.get(self._login_url)
         # Parsuje HTML a hledá skryté pole execution
         response = self._session.post(self._login_url, data={
@@ -83,7 +86,12 @@ class AbstractCezRestClient:
                 self.login()
                 continue
             elif response.status_code == 200:
-                return response.json()
+                try:
+                    return response.json()
+                except ValueError:
+                    # Prošlá session: portál místo JSON vrátí přihlašovací stránku (HTML)
+                    self.login()
+                    continue
         raise Exception('Unable to login')
 
 
