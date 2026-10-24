@@ -262,3 +262,24 @@ async def test_setup_entry_failure_surfaces_as_setup_error(
 
     # Login blew up inside _login_and_load_static -> async_setup raised
     assert entry.state in (ConfigEntryState.SETUP_RETRY, ConfigEntryState.SETUP_ERROR)
+
+
+@pytest.mark.parametrize("expected_lingering_timers", [True])  # YAML setup has no unload
+async def test_yaml_setup_loads_hub_and_creates_entities(
+    hass: HomeAssistant, enable_custom_integrations, mock_client
+):
+    """Legacy YAML configuration must set up without a config entry (issue #7).
+
+    It used to fail with "Detected code that uses async_config_entry_first_refresh,
+    which is only supported for coordinators with a config entry".
+    """
+    from homeassistant.setup import async_setup_component
+
+    assert await async_setup_component(
+        hass, DOMAIN, {DOMAIN: {CONF_USERNAME: "test-user", CONF_PASSWORD: "test-pass"}}
+    )
+    await hass.async_block_till_done()
+
+    hub: CezHub = hass.data[DOMAIN]["legacy"]
+    assert hub.signals_coordinator.data == {"8591824000000011": SIGNALS_PAYLOAD}
+    assert any(s.entity_id.startswith("calendar.") for s in hass.states.async_all())

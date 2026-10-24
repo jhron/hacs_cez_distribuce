@@ -24,6 +24,7 @@ from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.discovery import async_load_platform
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -222,10 +223,13 @@ class CezHub:
             update_interval=self._scan_readings,
         )
 
-        # Prime the coordinators
-        await self.signals_coordinator.async_config_entry_first_refresh()
-        await self.outages_coordinator.async_config_entry_first_refresh()
-        await self.readings_coordinator.async_config_entry_first_refresh()
+        # Prime the coordinators. YAML setup has no config entry, where
+        # async_config_entry_first_refresh is refused (#7).
+        for coordinator in (self.signals_coordinator, self.outages_coordinator, self.readings_coordinator):
+            if coordinator.config_entry is None:
+                await coordinator.async_refresh()
+            else:
+                await coordinator.async_config_entry_first_refresh()
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -247,7 +251,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.data[DOMAIN]["legacy"] = hub
 
     for platform in PLATFORMS:
-        hass.helpers.discovery.async_load_platform(platform, DOMAIN, {}, config)
+        hass.async_create_task(async_load_platform(hass, platform, DOMAIN, {}, config))
 
     return True
 
