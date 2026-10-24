@@ -138,6 +138,8 @@ class CezHub:
             ean = (p.supply_point_detail or {}).get("ean") or (p.supply_point or {}).get("ean")
             if ean and p.readings:
                 async_import_readings_statistics(self.hass, ean, p.readings)
+            if ean and (p.signals or {}).get("signals"):
+                self.signals_updated[ean] = dt.datetime.now(dt.timezone.utc)
 
         async def _update_signals() -> Dict[str, Any]:
             def _blocking():
@@ -150,7 +152,11 @@ class CezHub:
                         ean = p.supply_point_detail.get("ean")
                         if not ean or not p.supply_point_detail.get("hdo"):
                             continue
-                        p.signals = result[ean] = self._client.get_signals(ean)
+                        signals = self._client.get_signals(ean)
+                        if not (signals or {}).get("signals"):
+                            # Prázdný rozpis u OM s HDO není úspěch, poslední dobrý zůstává
+                            raise ValueError("portal returned an empty HDO schedule")
+                        p.signals = result[ean] = signals
                         self.signals_updated[ean] = dt.datetime.now(dt.timezone.utc)
                     except Exception as e:
                         _LOGGER.warning("Failed refreshing signals for %s: %s", getattr(p.supply_point_detail, 'ean', '?'), e)

@@ -283,6 +283,7 @@ async def test_yaml_setup_loads_hub_and_creates_entities(
     hub: CezHub = hass.data[DOMAIN]["legacy"]
     assert hub.signals_coordinator.data == {"8591824000000011": SIGNALS_PAYLOAD}
     assert any(s.entity_id.startswith("calendar.") for s in hass.states.async_all())
+    assert _schedule_state(hass).attributes["signals"] == SIGNALS_PAYLOAD["signals"]
 
 
 def _schedule_state(hass: HomeAssistant):
@@ -324,3 +325,38 @@ async def test_schedule_sensor_keeps_last_good_schedule_when_refresh_fails(
     after_failure = _schedule_state(hass)
     assert after_failure.attributes["signals"] == newer["signals"]
     assert after_failure.state == good.state
+
+
+async def test_schedule_timestamp_moves_on_success_but_not_on_empty_schedule(
+    hass: HomeAssistant, enable_custom_integrations, mock_client, freezer
+):
+    """An empty schedule from the portal is not a successful download."""
+    entry = await _add_loaded_entry(hass)
+    hub: CezHub = hass.data[DOMAIN][entry.entry_id]
+    first = _schedule_state(hass).state
+
+    freezer.tick(3600)
+    await hub.signals_coordinator.async_refresh()
+    await hass.async_block_till_done()
+    moved = _schedule_state(hass)
+    assert moved.state != first
+
+    freezer.tick(3600)
+    mock_client.get_signals.return_value = {"signals": []}
+    await hub.signals_coordinator.async_refresh()
+    await hass.async_block_till_done()
+    after_empty = _schedule_state(hass)
+    assert after_empty.attributes["signals"] == SIGNALS_PAYLOAD["signals"]
+    assert after_empty.state == moved.state
+
+
+async def test_schedule_timestamp_set_by_startup_load_even_if_first_refresh_fails(
+    hass: HomeAssistant, enable_custom_integrations, mock_client
+):
+    mock_client.get_signals.side_effect = [SIGNALS_PAYLOAD, Exception("portal down")]
+
+    await _add_loaded_entry(hass)
+
+    state = _schedule_state(hass)
+    assert state.state not in ("unknown", "unavailable")
+    assert state.attributes["signals"] == SIGNALS_PAYLOAD["signals"]
