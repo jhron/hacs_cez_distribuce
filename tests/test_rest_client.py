@@ -450,3 +450,26 @@ def test_html_from_token_endpoint_during_relogin_is_bounded(mocked_client, reque
 
     logins = sum(1 for r in requests_mock.request_history if r.method == "POST" and "mepas.cez.cz" in r.url)
     assert logins - logins_before == 1
+
+
+def test_relogin_after_non_json_answer_is_logged_without_body(mocked_client, requests_mock, caplog):
+    """What the portal returns for an expired session is not documented; log its shape (no body)."""
+    import logging
+
+    b = mocked_client._base_url
+    mocked_client.login("user", "pass")
+    requests_mock.get(
+        f"{b}/prehled-om?path=supply-point-detail/signals/E1",
+        [
+            {"status_code": 200, "text": LOGIN_HTML, "headers": {"Content-Type": "text/html;charset=UTF-8"}},
+            {"json": _envelope({"signals": []})},
+        ],
+    )
+    with caplog.at_level(logging.INFO, logger="custom_components.cez_distribuce"):
+        mocked_client.get_signals("E1")
+
+    records = [r for r in caplog.records if r.name.startswith("custom_components.cez_distribuce")]
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "200" in message and "text/html" in message
+    assert "execution" not in message   # no response body

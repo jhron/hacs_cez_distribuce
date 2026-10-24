@@ -38,6 +38,8 @@ MUJ_CEZ_APP_NAME = 'CEZDATA.CORP_qycprwso2_cprCAColFe-prod_PRODUCTION'
 
 LOGIN_RETRIES = 2
 
+_LOGGER = logging.getLogger(__name__)
+
 
 class AbstractCezRestClient:
     def __init__(self, redirect_url, client_id, username=None, password=None, extra_params=None):
@@ -109,6 +111,10 @@ class AbstractCezRestClient:
                         return response.json()
                     except ValueError:
                         # Prošlá session: portál místo JSON vrátí přihlašovací stránku (HTML)
+                        _LOGGER.info("Portal answered HTTP %s %s without JSON (redirects %s, final %s), logging in again",
+                                     response.status_code, response.headers.get('Content-Type'),
+                                     [r.status_code for r in response.history],
+                                     response.url.split('?', 1)[0].split(';', 1)[0])
                         self._relogin()
                         continue
             raise Exception('Unable to login')
