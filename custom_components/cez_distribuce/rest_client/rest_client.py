@@ -11,6 +11,7 @@ Notes:
   the event loop (e.g., via hass.async_add_executor_job).
 """
 import logging
+import threading
 import urllib.parse
 from typing import Sequence
 
@@ -51,27 +52,44 @@ class AbstractCezRestClient:
         self._session = requests.Session()
         self._session.max_redirects = 10
         self._anonymous_session = requests.Session()
+        # Session sdílejí koordinátory v různých vláknech executoru: přihlášení
+        # nesmí smazat cookies uprostřed cizího dotazu.
+        self._lock = threading.RLock()
+        self._relogging = False
 
     def login(self, username=None, password=None):
-        if username:
-            self._username = username
-        if password:
-            self._password = password
-        # Čisté přihlášení jako po restartu: cookies prošlé session by CAS
-        # mohly přesměrovat mimo formulář s polem 'execution'.
-        self._session.cookies.clear()
-        response = self._session.get(self._login_url)
-        # Parsuje HTML a hledá skryté pole execution
-        response = self._session.post(self._login_url, data={
-            'username': self._username,
-            'password': self._password,
-            'execution': BeautifulSoup(response.text, 'html.parser').find('input', {'name': 'execution'})['value'],
-            '_eventId': 'submit',
-            'geolocation': ''
-        })
-        logging.debug(log_history(response))
-        response = self._session.get(self._authorize_url)
-        logging.debug(log_history(response))
+        with self._lock:
+            if username:
+                self._username = username
+            if password:
+                self._password = password
+            # Čisté přihlášení jako po restartu: cookies prošlé session by CAS
+            # mohly přesměrovat mimo formulář s polem 'execution'.
+            self._session.cookies.clear()
+            self._session.headers.pop('X-Request-Token', None)
+            response = self._session.get(self._login_url)
+            # Parsuje HTML a hledá skryté pole execution
+            response = self._session.post(self._login_url, data={
+                'username': self._username,
+                'password': self._password,
+                'execution': BeautifulSoup(response.text, 'html.parser').find('input', {'name': 'execution'})['value'],
+                '_eventId': 'submit',
+                'geolocation': ''
+            })
+            logging.debug(log_history(response))
+            response = self._session.get(self._authorize_url)
+            logging.debug(log_history(response))
+
+    def _relogin(self):
+        # Jen jedno nové přihlášení naráz: když i během něj portál odpoví bez JSON
+        # (špatné heslo, údržba), skončit chybou místo rekurze login -> token -> login.
+        if self._relogging:
+            raise Exception('Unable to login: portal keeps answering without JSON')
+        self._relogging = True
+        try:
+            self.login()
+        finally:
+            self._relogging = False
 
     def _post(self, session: Session, url, data=None, json=None, **kwargs):
         return self._handle_login(lambda: session.post(url, data=data, json=json, **kwargs))
@@ -80,19 +98,20 @@ class AbstractCezRestClient:
         return self._handle_login(lambda: session.get(url, **kwargs))
 
     def _handle_login(self, func):
-        for i in range(LOGIN_RETRIES):
-            response = func()
-            if response.status_code == 401:
-                self.login()
-                continue
-            elif response.status_code == 200:
-                try:
-                    return response.json()
-                except ValueError:
-                    # Prošlá session: portál místo JSON vrátí přihlašovací stránku (HTML)
-                    self.login()
+        with self._lock:
+            for i in range(LOGIN_RETRIES):
+                response = func()
+                if response.status_code == 401:
+                    self._relogin()
                     continue
-        raise Exception('Unable to login')
+                elif response.status_code == 200:
+                    try:
+                        return response.json()
+                    except ValueError:
+                        # Prošlá session: portál místo JSON vrátí přihlašovací stránku (HTML)
+                        self._relogin()
+                        continue
+            raise Exception('Unable to login')
 
 
 class CezDistribuceRestClient(AbstractCezRestClient):
@@ -101,9 +120,10 @@ class CezDistribuceRestClient(AbstractCezRestClient):
         super().__init__(self._base_url, client_id)
 
     def login(self, username=None, password=None):
-        super().login(username, password)
-        self.refresh_api_token()
-        self.refresh_anon_api_token()
+        with self._lock:
+            super().login(username, password)
+            self.refresh_api_token()
+            self.refresh_anon_api_token()
 
     def refresh_api_token(self):
         # Hledání X-Request-Tokenu v těle finální stránky

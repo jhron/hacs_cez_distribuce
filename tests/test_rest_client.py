@@ -430,3 +430,23 @@ def test_login_starts_with_empty_cookie_jar(mocked_client, requests_mock):
 
     first_login_get = next(r for r in requests_mock.request_history if r.method == "GET" and "/cas/login" in r.url)
     assert "expired" not in (first_login_get.headers.get("Cookie") or "")
+
+
+def test_html_from_token_endpoint_during_relogin_is_bounded(mocked_client, requests_mock):
+    """Wrong password or a maintenance page: the token endpoint answers HTML too.
+
+    The re-login must not recurse (login -> token -> re-login -> ...), which would
+    hammer CAS with logins until RecursionError and risk an account lockout.
+    """
+    b = mocked_client._base_url
+    mocked_client.login("user", "pass")
+    html = {"status_code": 200, "text": LOGIN_HTML, "headers": {"Content-Type": "text/html"}}
+    requests_mock.get(f"{b}/prehled-om?path=supply-point-detail/signals/E1", **html)
+    requests_mock.get(f"{b}/rest-auth-api?path=/token/get", **html)
+    logins_before = sum(1 for r in requests_mock.request_history if r.method == "POST" and "mepas.cez.cz" in r.url)
+
+    with pytest.raises(Exception, match="Unable to login"):
+        mocked_client.get_signals("E1")
+
+    logins = sum(1 for r in requests_mock.request_history if r.method == "POST" and "mepas.cez.cz" in r.url)
+    assert logins - logins_before == 1
