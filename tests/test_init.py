@@ -18,6 +18,7 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 
 from custom_components.cez_distribuce import DOMAIN, CezHub
+from custom_components.cez_distribuce.rest_client.rest_client import CezAuthError
 
 # Sample portal data used to populate the hub without any network access.
 SUPPLY_POINTS_PAYLOAD = {
@@ -252,16 +253,36 @@ async def test_unload_entry_removes_hub_data(
         assert entry_id not in hass.data[DOMAIN]
 
 
-async def test_setup_entry_failure_surfaces_as_setup_error(
+async def test_setup_entry_portal_failure_retries(
     hass: HomeAssistant, enable_custom_integrations, mock_client
 ):
-    """If login fails during setup, the entry ends up in SETUP_RETRY/ERROR."""
+    """A login failure that is not a rejected password (outage) is retried by HA."""
     mock_client.login.side_effect = Exception("portal down")
 
     entry = await _add_loaded_entry(hass)
 
-    # Login blew up inside _login_and_load_static -> async_setup raised
-    assert entry.state in (ConfigEntryState.SETUP_RETRY, ConfigEntryState.SETUP_ERROR)
+    # Restart HA během odstávky portálu (14. 11. 2026) nesmí skončit v SETUP_ERROR
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+
+    # Uklidit naplánované opakování
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_setup_entry_rejected_credentials_starts_reauth(
+    hass: HomeAssistant, enable_custom_integrations, mock_client
+):
+    """A rejected password stops the retries and asks the user for a new one."""
+    mock_client.login.side_effect = CezAuthError("rejected")
+
+    entry = await _add_loaded_entry(hass)
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    reauth = [
+        f for f in hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+        if f["context"]["source"] == "reauth"
+    ]
+    assert len(reauth) == 1
 
 
 @pytest.mark.parametrize("expected_lingering_timers", [True])  # YAML setup has no unload

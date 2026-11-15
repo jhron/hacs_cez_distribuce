@@ -23,6 +23,7 @@ import voluptuous as vol
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.discovery import async_load_platform
 from homeassistant.helpers.typing import ConfigType
@@ -36,7 +37,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_READINGS_MIN,
     DEFAULT_SCAN_INTERVAL_SIGNALS_MIN,
 )
-from .rest_client.rest_client import CezDistribuceRestClient
+from .rest_client.rest_client import CezAuthError, CezDistribuceRestClient
 from .statistics import async_import_readings_statistics
 
 _LOGGER = logging.getLogger(__name__)
@@ -275,7 +276,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     scan_readings = data.get("scan_interval_readings", DEFAULT_SCAN_INTERVAL_READINGS_MIN)
 
     hub = CezHub(hass, username, password, scan_signals, scan_outages, scan_readings)
-    await hub.async_setup()
+    # Restart HA během odstávky portálu (14. 11. 2026) skončil obecnou výjimkou
+    # v setup_error a HA už setup nezkoušel. Odstávku a síť nechat HA opakovat,
+    # odmítnuté heslo neopakovat (zámek účtu) a zeptat se na nové.
+    try:
+        await hub.async_setup()
+    except CezAuthError as err:
+        raise ConfigEntryAuthFailed(str(err)) from err
+    except (ConfigEntryError, ConfigEntryNotReady):
+        raise  # trvalé chyby a opakování z first_refresh nechat, jak je HA poslal
+    except Exception as err:  # odstávka portálu, síť, HTML místo JSON
+        raise ConfigEntryNotReady(f"ČEZ Distribuce portal not available: {err}") from err
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = hub
