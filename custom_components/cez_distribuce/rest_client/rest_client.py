@@ -41,6 +41,10 @@ LOGIN_RETRIES = 2
 _LOGGER = logging.getLogger(__name__)
 
 
+class CezAuthError(Exception):
+    """CAS ČEZ odmítl přihlašovací údaje (špatné jméno nebo heslo)."""
+
+
 class AbstractCezRestClient:
     def __init__(self, redirect_url, client_id, username=None, password=None, extra_params=None):
         self._service = f'{CAS_BASE_URL}/oauth2.0/callbackAuthorize?client_id={client_id}&redirect_uri={urllib.parse.quote(redirect_url)}&response_type={RESPONSE_TYPE}&client_name={CLIENT_NAME}&scope={SCOPE}'
@@ -78,6 +82,13 @@ class AbstractCezRestClient:
                 '_eventId': 'submit',
                 'geolocation': ''
             })
+            # Špatné jméno nebo heslo: CAS odpoví HTTP 401 bez přesměrování a vrátí
+            # znovu přihlašovací stránku s #loginErrorsPanel (ověřeno 15. 11. 2026).
+            # Úspěšné přihlášení přesměruje dál na portál.
+            final_url = response.url.split('?', 1)[0].split(';', 1)[0]
+            if response.status_code == 401 and final_url == f'{CAS_BASE_URL}/login':
+                _LOGGER.warning("ČEZ CAS rejected the login: HTTP %s at %s", response.status_code, final_url)
+                raise CezAuthError('ČEZ CAS rejected the credentials (HTTP 401)')
             logging.debug(log_history(response))
             response = self._session.get(self._authorize_url)
             logging.debug(log_history(response))

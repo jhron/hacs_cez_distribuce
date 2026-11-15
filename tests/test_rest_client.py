@@ -17,6 +17,7 @@ from custom_components.cez_distribuce.rest_client.rest_client import (
     CAS_BASE_URL,
     CEZ_DISTRIBUCE_BASE_URL,
     CEZ_DISTRIBUCECLIENT_ID,
+    CezAuthError,
     CezDistribuceRestClient,
     is_array,
     log_history,
@@ -473,3 +474,39 @@ def test_relogin_after_non_json_answer_is_logged_without_body(mocked_client, req
     message = records[0].getMessage()
     assert "200" in message and "text/html" in message
     assert "execution" not in message   # no response body
+
+
+# ---------------------------------------------------------------------------
+# Odmítnuté přihlašovací údaje: CAS ČEZ vrací HTTP 401 a znovu přihlašovací
+# stránku s #loginErrorsPanel (ověřeno 15. 11. 2026 s neexistujícím účtem).
+# ---------------------------------------------------------------------------
+
+REJECTED_LOGIN_HTML = """<html><body>
+<div id="loginErrorsPanel">Authentication attempt has failed, likely due to invalid credentials.</div>
+<form id="fm1" method="post" action="login">
+  <input type="hidden" name="execution" value="exec-token-67890"/>
+</form></body></html>"""
+
+
+def test_rejected_credentials_raise_auth_error(mocked_client, requests_mock):
+    requests_mock.post(mocked_client._login_url, status_code=401, text=REJECTED_LOGIN_HTML)
+
+    with pytest.raises(CezAuthError):
+        mocked_client.login("user", "wrong-pass")
+
+    # Po odmítnutí se už nepokračuje na OIDC authorize ani pro token
+    assert not any(r.url == mocked_client._authorize_url for r in requests_mock.request_history)
+
+
+def test_relogin_with_rejected_credentials_raises_auth_error(mocked_client, requests_mock):
+    b = mocked_client._base_url
+    mocked_client.login("user", "pass")
+    # Session vypršela (HTML místo JSON) a mezitím se změnilo heslo
+    requests_mock.get(
+        f"{b}/common-api?path=/common/header",
+        status_code=200, text=LOGIN_HTML, headers={"Content-Type": "text/html"},
+    )
+    requests_mock.post(mocked_client._login_url, status_code=401, text=REJECTED_LOGIN_HTML)
+
+    with pytest.raises(CezAuthError):
+        mocked_client.common_header()
