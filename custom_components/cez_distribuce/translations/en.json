@@ -9,11 +9,21 @@
           "username": "Username",
           "password": "Password"
         }
+      },
+      "reauth_confirm": {
+        "title": "Sign in to ČEZ Distribuce again",
+        "description": "The portal rejected the password for {username}. Enter a valid password.",
+        "data": {
+          "password": "Password"
+        }
       }
     },
     "error": {
       "invalid_auth": "Invalid username or password.",
       "cannot_connect": "Failed to connect to the service. Try again later."
+    },
+    "abort": {
+      "reauth_successful": "The password is saved and the integration is reloading."
     }
   }
 }

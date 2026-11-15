@@ -13,8 +13,11 @@ import pytest
 from homeassistant import config_entries, data_entry_flow
 from homeassistant.core import HomeAssistant
 
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.cez_distribuce import DOMAIN
 from custom_components.cez_distribuce.const import CONF_PASSWORD, CONF_USERNAME
+from custom_components.cez_distribuce.rest_client.rest_client import CezAuthError
 
 
 @pytest.fixture(autouse=True)
@@ -140,3 +143,73 @@ async def test_unique_id_aborts_on_reconfigure(
     )
     assert result2["type"] is data_entry_flow.FlowResultType.ABORT
     assert result2["reason"] == "already_configured"
+
+
+# ---------------------------------------------------------------------------
+# Reauth: ČEZ odmítl uložené heslo, uživatel zadá nové (jméno zůstává).
+# ---------------------------------------------------------------------------
+
+def _add_entry(hass: HomeAssistant) -> MockConfigEntry:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="ČEZ Distribuce (test-user)",
+        unique_id="test-user",
+        data={CONF_USERNAME: "test-user", CONF_PASSWORD: "old-pass"},
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+async def test_reauth_updates_password(
+    hass: HomeAssistant, enable_custom_integrations, _mock_validate_credentials
+):
+    """A good new password is stored and the entry is reloaded."""
+    _, fake_client = _mock_validate_credentials
+    entry = _add_entry(hass)
+
+    # Reload po uložení hesla nesmí sahat na portál
+    with patch(
+        "custom_components.cez_distribuce.async_setup_entry", return_value=True
+    ) as mock_setup:
+        result = await entry.start_reauth_flow(hass)
+        assert result["type"] is data_entry_flow.FlowResultType.FORM
+        assert result["step_id"] == "reauth_confirm"
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_PASSWORD: "new-pass"}
+        )
+        await hass.async_block_till_done()
+
+        assert result["type"] is data_entry_flow.FlowResultType.ABORT
+        assert result["reason"] == "reauth_successful"
+        mock_setup.assert_awaited_once()
+
+    assert entry.data[CONF_PASSWORD] == "new-pass"
+    assert entry.data[CONF_USERNAME] == "test-user"
+    assert entry.unique_id == "test-user"
+    fake_client.login.assert_called_once_with("test-user", "new-pass")
+
+
+async def test_reauth_rejected_password_shows_invalid_auth(
+    hass: HomeAssistant, enable_custom_integrations, _mock_validate_credentials
+):
+    """A password the portal rejects keeps the form open and the old password."""
+    _, fake_client = _mock_validate_credentials
+    fake_client.login.side_effect = CezAuthError("rejected")
+    entry = _add_entry(hass)
+
+    with patch(
+        "custom_components.cez_distribuce.async_setup_entry", return_value=True
+    ) as mock_setup:
+        result = await entry.start_reauth_flow(hass)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_PASSWORD: "still-wrong"}
+        )
+        await hass.async_block_till_done()
+
+        assert result["type"] is data_entry_flow.FlowResultType.FORM
+        assert result["step_id"] == "reauth_confirm"
+        assert result["errors"] == {"base": "invalid_auth"}
+        mock_setup.assert_not_awaited()
+
+    assert entry.data[CONF_PASSWORD] == "old-pass"

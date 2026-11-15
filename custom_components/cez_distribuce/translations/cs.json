@@ -9,11 +9,21 @@
           "username": "Uživatelské jméno",
           "password": "Heslo"
         }
+      },
+      "reauth_confirm": {
+        "title": "Znovu přihlásit k ČEZ Distribuce",
+        "description": "Portál odmítl heslo k účtu {username}. Zadejte platné heslo.",
+        "data": {
+          "password": "Heslo"
+        }
       }
     },
     "error": {
       "invalid_auth": "Neplatné uživatelské jméno nebo heslo.",
       "cannot_connect": "Nepodařilo se připojit ke službě. Zkuste to prosím později."
+    },
+    "abort": {
+      "reauth_successful": "Heslo je uložené, integrace se znovu načte."
     }
   }
 }
