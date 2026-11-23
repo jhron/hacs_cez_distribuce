@@ -38,11 +38,23 @@ MUJ_CEZ_APP_NAME = 'CEZDATA.CORP_qycprwso2_cprCAColFe-prod_PRODUCTION'
 
 LOGIN_RETRIES = 2
 
+# Časový limit každého dotazu (spojení, odpověď) v sekundách. Bez něj portál, který
+# spojení přijme a neodpoví, drží vlákno executoru i zámek klienta navždy.
+REQUEST_TIMEOUT = (10, 60)
+
 _LOGGER = logging.getLogger(__name__)
 
 
 class CezAuthError(Exception):
     """CAS ČEZ odmítl přihlašovací údaje (špatné jméno nebo heslo)."""
+
+
+class _TimeoutSession(requests.Session):
+    """requests.Session s výchozím časovým limitem pro každý dotaz."""
+
+    def request(self, method, url, **kwargs):
+        kwargs.setdefault('timeout', REQUEST_TIMEOUT)
+        return super().request(method, url, **kwargs)
 
 
 class AbstractCezRestClient:
@@ -55,9 +67,9 @@ class AbstractCezRestClient:
         if extra_params:
             self._login_url += f'&{urllib.parse.urlencode(extra_params)}'
             self._authorize_url += f'&{urllib.parse.urlencode(extra_params)}'
-        self._session = requests.Session()
+        self._session = _TimeoutSession()
         self._session.max_redirects = 10
-        self._anonymous_session = requests.Session()
+        self._anonymous_session = _TimeoutSession()
         # Session sdílejí koordinátory v různých vláknech executoru: přihlášení
         # nesmí smazat cookies uprostřed cizího dotazu.
         self._lock = threading.RLock()

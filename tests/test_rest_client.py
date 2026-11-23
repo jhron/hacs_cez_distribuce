@@ -11,6 +11,7 @@ from __future__ import annotations
 import types
 
 import pytest
+import requests
 import requests_mock as rm_module
 
 from custom_components.cez_distribuce.rest_client.rest_client import (
@@ -18,6 +19,7 @@ from custom_components.cez_distribuce.rest_client.rest_client import (
     CEZ_DISTRIBUCE_BASE_URL,
     CEZ_DISTRIBUCECLIENT_ID,
     CezAuthError,
+    REQUEST_TIMEOUT,
     CezDistribuceRestClient,
     is_array,
     log_history,
@@ -510,3 +512,23 @@ def test_relogin_with_rejected_credentials_raises_auth_error(mocked_client, requ
 
     with pytest.raises(CezAuthError):
         mocked_client.common_header()
+
+
+def test_every_request_has_a_timeout(mocked_client, requests_mock):
+    # Portál, který spojení přijme a neodpoví, by bez limitu držel vlákno executoru
+    # i zámek klienta navždy: setup by neskončil a všechna čtení by se zablokovala.
+    b = mocked_client._base_url
+    requests_mock.get(f"{b}/common-api?path=/common/header", json=_envelope({"x": 1}))
+    mocked_client.login("user", "pass")
+    mocked_client.common_header()
+
+    assert len(requests_mock.request_history) >= 5
+    assert [r.timeout for r in requests_mock.request_history] == [REQUEST_TIMEOUT] * len(requests_mock.request_history)
+
+
+def test_timeout_is_not_reported_as_rejected_credentials(mocked_client, requests_mock):
+    # Vypršený limit je výpadek portálu (setup se zopakuje), ne odmítnuté heslo.
+    requests_mock.post(mocked_client._login_url, exc=requests.exceptions.ReadTimeout)
+
+    with pytest.raises(requests.exceptions.Timeout):
+        mocked_client.login("user", "pass")
